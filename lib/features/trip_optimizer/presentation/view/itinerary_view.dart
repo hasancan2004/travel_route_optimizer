@@ -9,6 +9,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:url_launcher/url_launcher.dart'; // YENİ: Haritalar için eklendi
 import 'package:travel_route_optimizer/features/trip_optimizer/presentation/view/pdf_preview_view.dart';
 
 import '../../domain/entities/itinerary_day_entity.dart';
@@ -63,6 +64,25 @@ class _ItineraryViewState extends State<ItineraryView> {
     context.read<TripOptimizerCubit>().autoSaveItinerary(_localItinerary);
   }
 
+  // YENİ: Cihazın kendi harita uygulamasında yol tarifi başlatan fonksiyon
+  Future<void> _launchMaps(double lat, double lng, String spotName) async {
+    final Uri url = Uri.parse('https://www.google.com/maps/dir/?api=1&destination=$lat,$lng');
+
+    if (await canLaunchUrl(url)) {
+      await launchUrl(url, mode: LaunchMode.externalApplication);
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('$spotName için haritalar açılamadı!'),
+            backgroundColor: Colors.redAccent,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+  }
+
   void _shareItinerary() {
     final StringBuffer buffer = StringBuffer();
     buffer.writeln('🗺️ **Trip Optimizer Seyahat Rotam** 🚀\n');
@@ -87,7 +107,7 @@ class _ItineraryViewState extends State<ItineraryView> {
   }
 
   void _showAddCustomSpotModal(BuildContext context, int dayIndex) {
-    LatLng initialMapCenter = const LatLng(36.8969, 30.7133); // En son çare Antalya
+    LatLng initialMapCenter = const LatLng(36.8969, 30.7133);
 
     if (_localItinerary[dayIndex].places.isNotEmpty) {
       initialMapCenter = LatLng(
@@ -134,7 +154,6 @@ class _ItineraryViewState extends State<ItineraryView> {
     return Scaffold(
       backgroundColor: const Color(0xFF1E293B),
       appBar: AppBar(
-        // ÇÖZÜM: Başlık metni kısaltılarak ikonlarla çakışması ve kesilmesi engellendi
         title: const Text(
           'Seyahat Rotam 🗺️',
           style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18, letterSpacing: 0.5),
@@ -224,7 +243,6 @@ class _ItineraryViewState extends State<ItineraryView> {
         },
         child: ListView.builder(
           physics: const BouncingScrollPhysics(),
-          // ÇÖZÜM: Listenin alt boşluğu artırılarak butonların rahat sığması sağlandı
           padding: const EdgeInsets.only(left: 16.0, right: 16.0, top: 12.0, bottom: 120.0),
           itemCount: _localItinerary.length + 1,
           itemBuilder: (context, index) {
@@ -233,7 +251,6 @@ class _ItineraryViewState extends State<ItineraryView> {
                 padding: const EdgeInsets.only(bottom: 24.0, top: 8.0),
                 child: Column(
                   children: [
-                    // Yeni Gün Ekle Butonu
                     ElevatedButton.icon(
                       onPressed: () {
                         setState(() {
@@ -272,7 +289,6 @@ class _ItineraryViewState extends State<ItineraryView> {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    // ÇÖZÜM: Rotayı Kaydet butonu FAB yerinden alınıp buraya, Yeni Gün'ün altına eklendi (Çakışma bitti!)
                     ElevatedButton.icon(
                       onPressed: () {
                         context.read<TripOptimizerCubit>().saveItinerary(_localItinerary);
@@ -519,9 +535,18 @@ class _ItineraryViewState extends State<ItineraryView> {
                               ],
                             ),
                           ),
+                          // YENİ: Harita butonu buraya, fiyat bilgisinin soluna eklendi
                           trailing: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
+                              IconButton(
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(),
+                                icon: const Icon(Icons.directions, color: Colors.blueAccent, size: 26),
+                                tooltip: 'Yol Tarifi Al',
+                                onPressed: () => _launchMaps(spot.lat, spot.lng, spot.name),
+                              ),
+                              const SizedBox(width: 12),
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                                 decoration: BoxDecoration(
@@ -568,7 +593,6 @@ class _ItineraryViewState extends State<ItineraryView> {
           },
         ),
       ),
-      // Çakışmaya sebep olan FloatingActionButton tamamen kaldırıldı.
     );
   }
 

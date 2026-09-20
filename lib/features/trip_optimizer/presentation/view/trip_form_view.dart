@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:travel_route_optimizer/features/auth/presentation/view/login_view.dart';
 import 'package:travel_route_optimizer/features/auth/presentation/viewmodel/auth_cubit.dart';
+import 'package:travel_route_optimizer/features/trip_optimizer/presentation/view/profile_view.dart';
 import 'package:travel_route_optimizer/features/trip_optimizer/presentation/view/saved_itineraries_view.dart';
 import 'package:travel_route_optimizer/features/trip_optimizer/presentation/view/ticket_wallet_view.dart';
 import 'package:travel_route_optimizer/features/trip_optimizer/presentation/view/traveler_stats_view.dart';
@@ -45,14 +46,19 @@ class _TripFormViewState extends State<TripFormView> {
         elevation: 0,
         foregroundColor: Colors.white,
         actions: [
-          // YENİ: İkon kalabalığını önlemek için PopupMenuButton (Üç Nokta Menüsü) eklendi
+          // trip_form_view.dart içindeki PopupMenuButton güncellenmiş hali
           PopupMenuButton<String>(
             icon: const Icon(Icons.more_vert, color: Colors.white),
             tooltip: "Seçenekler",
-            color: const Color(0xFF1E1E2C), // Tema uyumlu koyu arka plan
+            color: const Color(0xFF1E1E2C),
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
             onSelected: (value) {
-              if (value == 'explore') {
+              if (value == 'profile') {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const ProfileView()),
+                );
+              } else if (value == 'explore') {
                 Navigator.push(
                   context,
                   MaterialPageRoute(builder: (context) => const ExploreScreen()),
@@ -63,6 +69,7 @@ class _TripFormViewState extends State<TripFormView> {
                   MaterialPageRoute(builder: (context) => const TicketWalletView()),
                 );
               } else if (value == 'stats') {
+                context.read<TripOptimizerCubit>().loadTravelerStats();
                 Navigator.push(
                   context,
                   MaterialPageRoute(builder: (context) => const TravelerStatsView()),
@@ -79,6 +86,17 @@ class _TripFormViewState extends State<TripFormView> {
               }
             },
             itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+              const PopupMenuItem<String>(
+                value: 'profile',
+                child: Row(
+                  children: [
+                    Icon(Icons.person, color: Colors.deepPurpleAccent, size: 20),
+                    SizedBox(width: 12),
+                    Text('Profilim', style: TextStyle(color: Colors.white)),
+                  ],
+                ),
+              ),
+              const PopupMenuDivider(),
               const PopupMenuItem<String>(
                 value: 'explore',
                 child: Row(
