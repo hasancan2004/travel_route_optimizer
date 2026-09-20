@@ -1,3 +1,4 @@
+import 'dart:developer';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -16,21 +17,53 @@ import 'features/auth/presentation/viewmodel/auth_cubit.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await dotenv.load(fileName: ".env");
 
-  await Supabase.initialize(
-    url: dotenv.env['SUPABASE_URL'] ?? '',
-    anonKey: dotenv.env['SUPABASE_KEY'] ?? '',
-  );
+  try {
+    // 1. .env yükleniyor
+    await dotenv.load(fileName: ".env");
+    log("✅ .env başarıyla yüklendi.");
 
-  await Hive.initFlutter();
-  Hive.registerAdapter(SpotModelAdapter());
-  Hive.registerAdapter(ItineraryDayModelAdapter());
-  await Hive.openBox('itinerariesBox');
+    // 2. Supabase başlatılıyor
+    final supabaseUrl = dotenv.env['SUPABASE_URL'] ?? '';
+    final supabaseKey = dotenv.env['SUPABASE_KEY'] ?? '';
 
-  await di.init();
+    if (supabaseUrl.isEmpty || supabaseKey.isEmpty) {
+      log("⚠️ UYARI: Supabase URL veya Key boş!");
+    }
 
-  await NotificationService().init();
+    await Supabase.initialize(
+      url: supabaseUrl,
+      anonKey: supabaseKey,
+    );
+    log("✅ Supabase başlatıldı.");
+
+    // 3. Hive ayarları
+    await Hive.initFlutter();
+    if (!Hive.isAdapterRegistered(0)) {
+      Hive.registerAdapter(SpotModelAdapter());
+    }
+    if (!Hive.isAdapterRegistered(1)) {
+      Hive.registerAdapter(ItineraryDayModelAdapter());
+    }
+    await Hive.openBox('itinerariesBox');
+    log("✅ Hive kutusu açıldı.");
+
+    // 4. GetIt Dependency Injection
+    await di.init();
+    log("✅ GetIt bağımlılıkları yüklendi.");
+
+    // 5. Bildirim Servisi (Hata verirse uygulamanın açılmasını engellemesin diye try-catch içinde)
+    try {
+      await NotificationService().init();
+      log("✅ Bildirim servisi başlatıldı.");
+    } catch (e) {
+      log("⚠️ Bildirim servisi başlatılamadı: $e");
+    }
+
+  } catch (e, stackTrace) {
+    log("💥 ANA BAŞLANGIÇ HATASI: $e");
+    log(stackTrace.toString());
+  }
 
   runApp(const MyApp());
 }
@@ -62,14 +95,10 @@ class MyApp extends StatelessWidget {
           scaffoldBackgroundColor: const Color(0xFF0F172A),
           cardColor: const Color(0xFF1E293B),
           dialogBackgroundColor: const Color(0xFF1E293B),
-
-          // Metinlerin genel rengini beyaza sabitliyoruz ki listeler/kartlar okunur olsun
           textTheme: ThemeData.dark().textTheme.apply(
             bodyColor: Colors.white,
             displayColor: Colors.white,
           ),
-
-          // Input alanlarındaki etiketlerin kaybolmaması için renk ve border ayarları
           inputDecorationTheme: InputDecorationTheme(
             filled: true,
             fillColor: const Color(0xFF0F172A),

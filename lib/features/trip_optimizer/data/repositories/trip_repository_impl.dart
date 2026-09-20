@@ -1,3 +1,5 @@
+import 'package:supabase_flutter/supabase_flutter.dart';
+
 import '../../domain/entities/itinerary_day_entity.dart';
 import '../../domain/entities/spot_entity.dart';
 import '../../domain/repositories/trip_repository.dart';
@@ -129,6 +131,28 @@ class TripRepositoryImpl implements TripRepository {
   // Kaydedilen rotaları yerel veritabanından getirme
   @override
   Future<List<List<ItineraryDayEntity>>> getSavedItineraries() async {
+    final currentUserId = Supabase.instance.client.auth.currentUser?.id;
+
+    if (currentUserId != null) {
+      try {
+        // 1. Buluttan en güncel veriyi çek
+        final cloudItineraries = await remoteDataSource.getUserItinerariesFromCloud(currentUserId);
+
+        // 2. Eğer buluttan başarıyla geldiyse, yerel Hive'ı temizleyip buluttaki verilerle ez
+        await localDataSource.clearAllItineraries();
+        for (var itinerary in cloudItineraries) {
+          await localDataSource.saveItinerary(itinerary);
+        }
+
+        return cloudItineraries;
+      } catch (e) {
+        print("Bulut senkronizasyonu başarısız, Hive (lokal) kullanılıyor: $e");
+        // İnternet yoksa veya hata verirse yerelden (Hive) devam et
+        return await localDataSource.getSavedItineraries();
+      }
+    }
+
+    // Kullanıcı giriş yapmamışsa zaten sadece yerel verileri ver
     return await localDataSource.getSavedItineraries();
   }
 

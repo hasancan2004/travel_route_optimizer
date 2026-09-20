@@ -4,6 +4,7 @@ import '../models/itinerary_day_model.dart';
 abstract class TripLocalDataSource {
   Future<void> saveItinerary(List<ItineraryDayModel> itinerary);
   Future<List<List<ItineraryDayModel>>> getSavedItineraries();
+  Future<void> clearAllItineraries();
 }
 
 class TripLocalDataSourceImpl implements TripLocalDataSource {
@@ -30,5 +31,11 @@ class TripLocalDataSourceImpl implements TripLocalDataSource {
     }
 
     return savedItineraries;
+  }
+
+  @override
+  Future<void> clearAllItineraries() async {
+    final box = await Hive.openBox("itinerariesBox");
+    await box.clear();
   }
 }

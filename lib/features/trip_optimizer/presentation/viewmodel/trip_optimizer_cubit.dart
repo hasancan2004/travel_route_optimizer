@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../domain/entities/itinerary_day_entity.dart';
@@ -121,6 +123,18 @@ class TripOptimizerCubit extends Cubit<TripOptimizerState> {
       emit(SavedItinerariesLoaded(savedItineraries));
     } catch (e) {
       emit(TripOptimizerError("Kayıtlı rotalar getirilirken hata: ${e.toString()}"));
+    }
+  }
+
+  // Sadece istatistik sayfası için sessizce veriyi çeken metot
+  Future<void> loadTravelerStats() async {
+    emit(TripOptimizerLoading());
+    try {
+      final savedItineraries = await repository.getSavedItineraries();
+      // SavedItinerariesLoaded yerine yeni state'imizi yayıyoruz:
+      emit(TravelerStatsLoaded(savedItineraries));
+    } catch (e) {
+      emit(TripOptimizerError("İstatistikler getirilirken hata: ${e.toString()}"));
     }
   }
 

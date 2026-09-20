@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+
+import '../viewmodel/trip_optimizer_cubit.dart';
+import '../viewmodel/trip_optimizer_state.dart';
 
 class TravelerStatsView extends StatefulWidget {
   const TravelerStatsView({super.key});
@@ -9,17 +13,15 @@ class TravelerStatsView extends StatefulWidget {
 }
 
 class _TravelerStatsViewState extends State<TravelerStatsView> {
-  // Koyu Tema Renk Paleti (Premium Slate)
   final Color darkBg = const Color(0xFF0F172A);
   final Color cardBg = const Color(0xFF1E293B);
 
-  // NOT: Bu veriler şu an UI'ı görmek için statiktir (Mock Data).
-  // Bir sonraki aşamada Hive/Isar gibi yerel veritabanını bağladığımızda,
-  // bu verileri kullanıcının telefon hafızasından canlı olarak çekeceğiz.
-  final int totalTrips = 12;
-  final double totalWalkedKm = 145.5;
-  final double totalSpentMoney = 18450.0;
-  final String topCategory = "Tarih / Müze";
+  @override
+  void initState() {
+    super.initState();
+    // Ekran açılır açılmaz en güncel rotaları (ve varsa bulut senkronizasyonunu) tetikliyoruz
+    context.read<TripOptimizerCubit>().loadTravelerStats();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -32,171 +34,218 @@ class _TravelerStatsViewState extends State<TravelerStatsView> {
         elevation: 0,
         foregroundColor: Colors.white,
       ),
-      body: SingleChildScrollView(
-        physics: const BouncingScrollPhysics(),
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // Üst Karşılama Alanı
-            const Text(
-              'Tekrar Hoş Geldin!',
-              style: TextStyle(color: Colors.white54, fontSize: 16, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'Seyahat & Ekonomi Özetin',
-              style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w900),
-            ),
-            const SizedBox(height: 24),
+      body: BlocBuilder<TripOptimizerCubit, TripOptimizerState>(
+        builder: (context, state) {
+          if (state is TripOptimizerLoading) {
+            return const Center(child: CircularProgressIndicator(color: Colors.blueAccent));
+          }
 
-            // 4'lü İstatistik Izgarası (Grid)
-            Row(
-              children: [
-                Expanded(child: _buildStatCard('Tamamlanan Rota', '$totalTrips', 'Adet', Icons.map_outlined, Colors.blueAccent)),
-                const SizedBox(width: 16),
-                Expanded(child: _buildStatCard('Yürünen Mesafe', totalWalkedKm.toStringAsFixed(1), 'km', Icons.directions_walk, Colors.greenAccent)),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(child: _buildStatCard('Yönetilen Bütçe', '18.4K', '₺', Icons.account_balance_wallet_outlined, Colors.orangeAccent)),
-                const SizedBox(width: 16),
-                Expanded(child: _buildStatCard('Favori Kategori', topCategory, '', Icons.account_balance, Colors.purpleAccent)),
-              ],
-            ),
-            const SizedBox(height: 32),
+          if (state is TravelerStatsLoaded) {
+            final itineraries = state.itineraries;
 
-            // Finansal Analiz Grafiği (Bar Chart)
-            const Row(
-              children: [
-                Icon(Icons.bar_chart, color: Colors.blueAccent),
-                SizedBox(width: 8),
-                Text('Son 6 Rotadaki Harcamalar', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Container(
-              height: 240,
-              padding: const EdgeInsets.only(top: 24, right: 24, left: 12, bottom: 12),
-              decoration: BoxDecoration(
-                color: cardBg,
-                borderRadius: BorderRadius.circular(24),
-                boxShadow: [
-                  BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 15, offset: const Offset(0, 8))
-                ],
-              ),
-              child: BarChart(
-                BarChartData(
-                  alignment: BarChartAlignment.spaceAround,
-                  maxY: 6000,
-                  barTouchData: BarTouchData(
-                    enabled: true,
-                    touchTooltipData: BarTouchTooltipData(
-                      getTooltipColor: (group) => Colors.blueAccent,
-                      getTooltipItem: (group, groupIndex, rod, rodIndex) {
-                        return BarTooltipItem(
-                          '${rod.toY.round()} ₺',
-                          const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-                        );
-                      },
-                    ),
-                  ),
-                  titlesData: FlTitlesData(
-                    show: true,
-                    bottomTitles: AxisTitles(
-                      sideTitles: SideTitles(
-                        showTitles: true,
-                        getTitlesWidget: (double value, TitleMeta meta) {
-                          const style = TextStyle(color: Colors.white54, fontWeight: FontWeight.bold, fontSize: 12);
-                          String text;
-                          switch (value.toInt()) {
-                            case 0: text = 'Oca'; break;
-                            case 1: text = 'Şub'; break;
-                            case 2: text = 'Mar'; break;
-                            case 3: text = 'Nis'; break;
-                            case 4: text = 'May'; break;
-                            case 5: text = 'Haz'; break;
-                            default: text = ''; break;
-                          }
-                          return Padding(padding: const EdgeInsets.only(top: 8.0), child: Text(text, style: style));
-                        },
-                      ),
-                    ),
-                    leftTitles: AxisTitles(
-                      sideTitles: SideTitles(
-                        showTitles: true,
-                        reservedSize: 40,
-                        getTitlesWidget: (double value, TitleMeta meta) {
-                          if (value == 0) return const SizedBox.shrink();
-                          return Text('${(value / 1000).toStringAsFixed(1)}k', style: const TextStyle(color: Colors.white38, fontSize: 11, fontWeight: FontWeight.bold));
-                        },
-                      ),
-                    ),
-                    topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                    rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                  ),
-                  gridData: FlGridData(
-                    show: true,
-                    drawVerticalLine: false,
-                    horizontalInterval: 1500,
-                    getDrawingHorizontalLine: (value) => FlLine(color: Colors.white10, strokeWidth: 1, dashArray: [5, 5]),
-                  ),
-                  borderData: FlBorderData(show: false),
-                  barGroups: [
-                    _buildBarGroup(0, 1200, Colors.blueAccent),
-                    _buildBarGroup(1, 3500, Colors.blueAccent),
-                    _buildBarGroup(2, 2100, Colors.blueAccent),
-                    _buildBarGroup(3, 4800, Colors.blueAccent),
-                    _buildBarGroup(4, 1500, Colors.blueAccent),
-                    _buildBarGroup(5, 5200, Colors.orangeAccent), // En yüksek harcama vurgusu
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 32),
+            // --- DİNAMİK HESAPLAMA ALGORİTMASI ---
+            int totalTrips = itineraries.length;
+            double totalWalkedKm = 0.0;
+            double totalSpentMoney = 0.0;
+            Map<String, int> categoryCounts = {};
 
-            // Gezgin Tavsiyesi Kartı
-            Container(
+            for (var itinerary in itineraries) {
+              for (var day in itinerary) {
+                totalWalkedKm += day.estimatedWalkingKm;
+                for (var spot in day.places) {
+                  totalSpentMoney += spot.entryFee;
+                  // Kategori frekansını sayıyoruz
+                  categoryCounts[spot.category] = (categoryCounts[spot.category] ?? 0) + 1;
+                }
+              }
+            }
+
+            // En çok tekrar eden kategoriyi bulma
+            String topCategory = "Henüz Yok";
+            if (categoryCounts.isNotEmpty) {
+              topCategory = categoryCounts.entries
+                  .reduce((a, b) => a.value > b.value ? a : b)
+                  .key;
+            }
+
+            return SingleChildScrollView(
+              physics: const BouncingScrollPhysics(),
               padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [Colors.blue.shade900.withOpacity(0.5), Colors.blue.shade800.withOpacity(0.2)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: Colors.blueAccent.withOpacity(0.3)),
-              ),
-              child: Row(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const Icon(Icons.tips_and_updates_rounded, color: Colors.amber, size: 36),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                  const Text(
+                    'Tekrar Hoş Geldin!',
+                    style: TextStyle(color: Colors.white54, fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Seyahat & Ekonomi Özetin',
+                    style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w900),
+                  ),
+                  const SizedBox(height: 24),
+
+                  Row(
+                    children: [
+                      Expanded(child: _buildStatCard('Tamamlanan Rota', '$totalTrips', 'Adet', Icons.map_outlined, Colors.blueAccent)),
+                      const SizedBox(width: 16),
+                      Expanded(child: _buildStatCard('Yürünen Mesafe', totalWalkedKm.toStringAsFixed(1), 'km', Icons.directions_walk, Colors.greenAccent)),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Expanded(child: _buildStatCard('Harcanan Tutar', totalSpentMoney.toStringAsFixed(0), '₺', Icons.account_balance_wallet_outlined, Colors.orangeAccent)),
+                      const SizedBox(width: 16),
+                      Expanded(child: _buildStatCard('Favori Kategori', topCategory, '', Icons.account_balance, Colors.purpleAccent)),
+                    ],
+                  ),
+                  const SizedBox(height: 32),
+
+                  const Row(
+                    children: [
+                      Icon(Icons.bar_chart, color: Colors.blueAccent),
+                      SizedBox(width: 8),
+                      Text('Son 6 Rotadaki Harcamalar', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Grafik için harcamaları son 6 rotaya göre eşleştiriyoruz
+                  _buildDynamicBarChart(itineraries),
+
+                  const SizedBox(height: 32),
+                  Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [Colors.blue.shade900.withOpacity(0.5), Colors.blue.shade800.withOpacity(0.2)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: Colors.blueAccent.withOpacity(0.3)),
+                    ),
+                    child: Row(
                       children: [
-                        const Text('Sıradaki Hedefin', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Yürüyüş mesafen çok iyi! Bir sonraki rotanda doğa parklarını keşfederek seriyi sürdürebilirsin.',
-                          style: TextStyle(color: Colors.grey.shade300, fontSize: 13, height: 1.4),
+                        const Icon(Icons.tips_and_updates_rounded, color: Colors.amber, size: 36),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('Sıradaki Hedefin', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+                              const SizedBox(height: 4),
+                              Text(
+                                totalWalkedKm > 10
+                                    ? 'Harika bir kardiyo çıkardın! Bir sonraki rotanda doğa parklarını keşfederek seriyi sürdürebilirsin.'
+                                    : 'Yeni yerler keşfetmek için harika bir gün. Hadi yeni bir rota oluşturalım!',
+                                style: TextStyle(color: Colors.grey.shade300, fontSize: 13, height: 1.4),
+                              ),
+                            ],
+                          ),
                         ),
                       ],
                     ),
                   ),
+                  const SizedBox(height: 40),
                 ],
               ),
+            );
+          }
+
+          return const Center(child: Text("Rotanız bulunmuyor", style: TextStyle(color: Colors.white)));
+        },
+      ),
+    );
+  }
+
+  Widget _buildDynamicBarChart(List<dynamic> itineraries) {
+    // Son 6 rotanın toplam harcamalarını alıyoruz (yoksa 0)
+    List<double> recentExpenses = List.filled(6, 0.0);
+    int startIndex = itineraries.length > 6 ? itineraries.length - 6 : 0;
+
+    for (int i = startIndex; i < itineraries.length; i++) {
+      double tripExpense = 0;
+      for (var day in itineraries[i]) {
+        for (var spot in day.places) {
+          tripExpense += spot.entryFee;
+        }
+      }
+      recentExpenses[i - startIndex] = tripExpense;
+    }
+
+    double maxExpense = recentExpenses.isNotEmpty ? recentExpenses.reduce((a, b) => a > b ? a : b) : 0;
+    if (maxExpense == 0) maxExpense = 1000; // Grafik patlamasın diye varsayılan tavan
+
+    return Container(
+      height: 240,
+      padding: const EdgeInsets.only(top: 24, right: 24, left: 12, bottom: 12),
+      decoration: BoxDecoration(
+        color: cardBg,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 15, offset: const Offset(0, 8))
+        ],
+      ),
+      child: BarChart(
+        BarChartData(
+          alignment: BarChartAlignment.spaceAround,
+          maxY: maxExpense * 1.2, // Tavanı %20 yüksek tutuyoruz ki çubuklar tepeye yapışmasın
+          barTouchData: BarTouchData(
+            enabled: true,
+            touchTooltipData: BarTouchTooltipData(
+              getTooltipColor: (group) => Colors.blueAccent,
+              getTooltipItem: (group, groupIndex, rod, rodIndex) {
+                return BarTooltipItem(
+                  '${rod.toY.round()} ₺',
+                  const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                );
+              },
             ),
-            const SizedBox(height: 40),
-          ],
+          ),
+          titlesData: FlTitlesData(
+            show: true,
+            bottomTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                getTitlesWidget: (double value, TitleMeta meta) {
+                  return Padding(
+                      padding: const EdgeInsets.only(top: 8.0),
+                      child: Text('R${value.toInt() + 1}', style: const TextStyle(color: Colors.white54, fontWeight: FontWeight.bold, fontSize: 12))
+                  );
+                },
+              ),
+            ),
+            leftTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                reservedSize: 40,
+                getTitlesWidget: (double value, TitleMeta meta) {
+                  if (value == 0) return const SizedBox.shrink();
+                  return Text('${(value / 1000).toStringAsFixed(1)}k', style: const TextStyle(color: Colors.white38, fontSize: 11, fontWeight: FontWeight.bold));
+                },
+              ),
+            ),
+            topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          ),
+          gridData: FlGridData(
+            show: true,
+            drawVerticalLine: false,
+            horizontalInterval: maxExpense > 0 ? maxExpense / 3 : 1000,
+            getDrawingHorizontalLine: (value) => FlLine(color: Colors.white10, strokeWidth: 1, dashArray: [5, 5]),
+          ),
+          borderData: FlBorderData(show: false),
+          barGroups: List.generate(6, (index) {
+            bool isMax = recentExpenses[index] == maxExpense && maxExpense > 0;
+            return _buildBarGroup(index, recentExpenses[index], isMax ? Colors.orangeAccent : Colors.blueAccent);
+          }),
         ),
       ),
     );
   }
 
-  // İstatistik Kartı Oluşturucu Metot
   Widget _buildStatCard(String title, String value, String unit, IconData icon, Color color) {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -234,7 +283,6 @@ class _TravelerStatsViewState extends State<TravelerStatsView> {
     );
   }
 
-  // Bar Chart Sütun Oluşturucu Metot
   BarChartGroupData _buildBarGroup(int x, double y, Color color) {
     return BarChartGroupData(
       x: x,
@@ -246,7 +294,7 @@ class _TravelerStatsViewState extends State<TravelerStatsView> {
           borderRadius: const BorderRadius.vertical(top: Radius.circular(6)),
           backDrawRodData: BackgroundBarChartRodData(
             show: true,
-            toY: 6000,
+            toY: y > 0 ? y * 1.2 : 1000,
             color: Colors.white.withOpacity(0.05),
           ),
         ),

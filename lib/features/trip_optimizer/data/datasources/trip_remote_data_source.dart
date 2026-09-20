@@ -34,6 +34,8 @@ abstract class TripRemoteDataSource {
     required double maxBudget,
     required List<Map<String, dynamic>> itinerary,
   });
+
+  Future<List<List<ItineraryDayModel>>> getUserItinerariesFromCloud(String userId);
 }
 
 class TripRemoteDataSourceImpl implements TripRemoteDataSource {
@@ -166,6 +168,26 @@ class TripRemoteDataSourceImpl implements TripRemoteDataSource {
       }
     } catch (e) {
       throw Exception('Toplulukta paylaşılırken hata oluştu: $e');
+    }
+  }
+
+  @override
+  Future<List<List<ItineraryDayModel>>> getUserItinerariesFromCloud(String userId) async {
+    try {
+      final response = await dio.get('$baseUrl/user-itineraries/$userId');
+      if (response.statusCode == 200) {
+        final List data = response.data['itineraries'];
+
+        // JSON'u List<List<ItineraryDayModel>> formatına çeviriyoruz
+        return data.map<List<ItineraryDayModel>>((itineraryJson) {
+          final List daysList = itineraryJson['itinerary'];
+          return daysList.map((dayJson) => ItineraryDayModel.fromJson(dayJson)).toList();
+        }).toList();
+      } else {
+        throw Exception('Bulut rotaları çekilemedi');
+      }
+    } catch (e) {
+      throw Exception('Buluttan veri getirilirken hata: $e');
     }
   }
 }

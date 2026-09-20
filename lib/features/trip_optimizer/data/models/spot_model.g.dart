@@ -25,7 +25,7 @@ class SpotModelAdapter extends TypeAdapter<SpotModel> {
       lng: fields[5] as double,
       calculatedScore: fields[6] as double?,
       imagePath: fields[7] as String?,
-      isOutdoor: fields[8] as bool,
+      isOutdoor: fields[8] == null ? false : fields[8] as bool,
     );
   }
 

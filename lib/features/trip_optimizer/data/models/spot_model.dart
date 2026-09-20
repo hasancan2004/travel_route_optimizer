@@ -38,7 +38,7 @@ class SpotModel extends SpotEntity {
   final String? imagePath;
 
   @override
-  @HiveField(8) // YENİ: Yağmur / hava durumu optimizasyonu için açık hava alanı
+  @HiveField(8, defaultValue: false) // YENİ: Yağmur / hava durumu optimizasyonu için açık hava alanı
   final bool isOutdoor;
 
   const SpotModel({

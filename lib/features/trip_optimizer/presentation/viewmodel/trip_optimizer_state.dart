@@ -67,3 +67,9 @@ class PublicItinerariesLoaded extends TripOptimizerState {
 
 // YENİ: Rota başarıyla toplulukta paylaşıldığında tetiklenecek state
 class ItinerarySharedSuccessfully extends TripOptimizerState {}
+
+class TravelerStatsLoaded extends TripOptimizerState {
+  final List<List<ItineraryDayEntity>> itineraries;
+
+  TravelerStatsLoaded(this.itineraries);
+}
