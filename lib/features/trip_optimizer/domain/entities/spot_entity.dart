@@ -10,6 +10,7 @@ class SpotEntity extends Equatable {
   final double? calculatedScore;
   final String? imagePath;
   final bool isOutdoor; // YENİ: Mekan açık hava mı? (Yağmur kontrolü için)
+  final String? imageUrl;
 
   const SpotEntity({
     required this.name,
@@ -21,6 +22,7 @@ class SpotEntity extends Equatable {
     this.calculatedScore,
     this.imagePath,
     this.isOutdoor = false, // Varsayılan olarak kapalı alan/müze kabul edelim
+    this.imageUrl,
   });
 
   @override

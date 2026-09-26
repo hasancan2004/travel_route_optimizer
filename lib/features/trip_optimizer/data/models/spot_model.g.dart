@@ -26,13 +26,14 @@ class SpotModelAdapter extends TypeAdapter<SpotModel> {
       calculatedScore: fields[6] as double?,
       imagePath: fields[7] as String?,
       isOutdoor: fields[8] == null ? false : fields[8] as bool,
+      imageUrl: fields[9] as String?,
     );
   }
 
   @override
   void write(BinaryWriter writer, SpotModel obj) {
     writer
-      ..writeByte(9)
+      ..writeByte(10)
       ..writeByte(0)
       ..write(obj.name)
       ..writeByte(1)
@@ -50,7 +51,9 @@ class SpotModelAdapter extends TypeAdapter<SpotModel> {
       ..writeByte(7)
       ..write(obj.imagePath)
       ..writeByte(8)
-      ..write(obj.isOutdoor);
+      ..write(obj.isOutdoor)
+      ..writeByte(9)
+      ..write(obj.imageUrl);
   }
 
   @override

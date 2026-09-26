@@ -39,4 +39,6 @@ abstract class TripRepository {
     required double maxBudget,
     required List<ItineraryDayEntity> itinerary,
   });
+
+  Future<Map<String, dynamic>> analyzePromptWithAI(String prompt);
 }

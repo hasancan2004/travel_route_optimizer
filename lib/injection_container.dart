@@ -6,7 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'features/auth/presentation/viewmodel/auth_cubit.dart';
 import 'features/trip_optimizer/data/datasources/trip_remote_data_source.dart';
 import 'features/trip_optimizer/data/datasources/trip_local_data_source.dart';
-import 'features/trip_optimizer/data/datasources/weather_remote_data_source.dart'; // YENİ: Hava durumu veri kaynağı eklendi
+import 'features/trip_optimizer/data/datasources/weather_remote_data_source.dart';
 import 'features/trip_optimizer/data/repositories/trip_repository_impl.dart';
 import 'features/trip_optimizer/domain/repositories/trip_repository.dart';
 import 'features/trip_optimizer/domain/usecases/get_city_spots_usecase.dart';
@@ -21,15 +21,24 @@ import 'features/trip_optimizer/presentation/viewmodel/trip_optimizer_cubit.dart
 final sl = GetIt.instance;
 
 Future<void> init() async {
+  // Zaten kayıtlıysa tekrar kaydetme (hot restart koruması)
+  if (sl.isRegistered<Dio>()) return;
+
   // 1. Dış Paketler (Network & Backend)
-  sl.registerLazySingleton(() => Dio());
+  // ÇÖZÜM: Render uykudan uyanana kadar pes etmemesi için 60 saniyelik tolerans ekledik.
+  sl.registerLazySingleton(() => Dio(
+    BaseOptions(
+      connectTimeout: const Duration(seconds: 60),
+      receiveTimeout: const Duration(seconds: 60),
+    ),
+  ));
+
   sl.registerLazySingleton(() => Supabase.instance.client);
 
   // ==========================================
   //         TRIP OPTIMIZER INJECTION
   // ==========================================
 
-  // YENİ: WeatherRemoteDataSource GetIt'e kaydedildi
   sl.registerLazySingleton(() => WeatherRemoteDataSource());
 
   sl.registerLazySingleton<TripRemoteDataSource>(
@@ -44,7 +53,7 @@ Future<void> init() async {
         () => TripRepositoryImpl(
       remoteDataSource: sl(),
       localDataSource: sl(),
-      weatherRemoteDataSource: sl(), // YENİ: Enjeksiyon tamamlandı
+      weatherRemoteDataSource: sl(),
     ),
   );
 

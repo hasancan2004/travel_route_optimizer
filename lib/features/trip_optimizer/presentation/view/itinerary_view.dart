@@ -9,7 +9,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:url_launcher/url_launcher.dart'; // YENİ: Haritalar için eklendi
+import 'package:url_launcher/url_launcher.dart';
 import 'package:travel_route_optimizer/features/trip_optimizer/presentation/view/pdf_preview_view.dart';
 
 import '../../domain/entities/itinerary_day_entity.dart';
@@ -26,11 +26,13 @@ import 'package:http/http.dart' as http;
 
 class ItineraryView extends StatefulWidget {
   final List<ItineraryDayEntity> itinerary;
+  final double maxBudget;
   final List<Map<String, String>> availableCategories;
 
   const ItineraryView({
     super.key,
     required this.itinerary,
+    this.maxBudget = 5000.0,
     this.availableCategories = const [
       {'label': 'Tarih 🏛️', 'value': 'history'},
       {'label': 'Doğa 🌲', 'value': 'nature'},
@@ -64,7 +66,12 @@ class _ItineraryViewState extends State<ItineraryView> {
     context.read<TripOptimizerCubit>().autoSaveItinerary(_localItinerary);
   }
 
-  // YENİ: Cihazın kendi harita uygulamasında yol tarifi başlatan fonksiyon
+  double get _totalSpent {
+    return _localItinerary.fold(0.0, (sum, day) {
+      return sum + day.places.fold(0.0, (daySum, spot) => daySum + spot.entryFee);
+    });
+  }
+
   Future<void> _launchMaps(double lat, double lng, String spotName) async {
     final Uri url = Uri.parse('https://www.google.com/maps/dir/?api=1&destination=$lat,$lng');
 
@@ -149,10 +156,123 @@ class _ItineraryViewState extends State<ItineraryView> {
     });
   }
 
+  Widget _buildBudgetTracker() {
+    final spent = _totalSpent;
+    final remaining = widget.maxBudget - spent;
+    final isOverBudget = spent > widget.maxBudget;
+
+    double progress = 0.0;
+    if (widget.maxBudget > 0) {
+      progress = (spent / widget.maxBudget).clamp(0.0, 1.0);
+    } else {
+      progress = spent > 0 ? 1.0 : 0.0;
+    }
+
+    Color progressColor;
+    if (isOverBudget) {
+      progressColor = Colors.redAccent;
+    } else if (progress > 0.8) {
+      progressColor = Colors.orangeAccent;
+    } else {
+      progressColor = Colors.greenAccent;
+    }
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E293B),
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.2),
+            blurRadius: 15,
+            offset: const Offset(0, 8),
+          ),
+        ],
+        border: Border.all(
+          color: isOverBudget ? Colors.redAccent.withOpacity(0.5) : Colors.transparent,
+          width: 1.5,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Maliyet Özeti',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: isOverBudget ? Colors.redAccent.withOpacity(0.2) : progressColor.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  isOverBudget ? 'Bütçe Aşıldı!' : 'Kalan: ${remaining.toStringAsFixed(0)} ₺',
+                  style: TextStyle(
+                    color: progressColor,
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: LinearProgressIndicator(
+              value: progress,
+              minHeight: 10,
+              backgroundColor: Colors.white.withOpacity(0.1),
+              valueColor: AlwaysStoppedAnimation<Color>(progressColor),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Harcanan', style: TextStyle(color: Colors.grey.shade400, fontSize: 12)),
+                  const SizedBox(height: 4),
+                  Text(
+                    '${spent.toStringAsFixed(0)} ₺',
+                    style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text('Toplam Bütçe', style: TextStyle(color: Colors.grey.shade400, fontSize: 12)),
+                  const SizedBox(height: 4),
+                  Text(
+                    '${widget.maxBudget.toStringAsFixed(0)} ₺',
+                    style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF1E293B),
+      backgroundColor: const Color(0xFF0F172A),
       appBar: AppBar(
         title: const Text(
           'Seyahat Rotam 🗺️',
@@ -225,373 +345,414 @@ class _ItineraryViewState extends State<ItineraryView> {
           const SizedBox(width: 4),
         ],
       ),
-      body: BlocListener<TripOptimizerCubit, TripOptimizerState>(
-        listener: (context, state) {
-          if (state is ItinerarySaved) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Rota Başarıyla Kaydedildi! 💾'),
-                backgroundColor: Colors.green,
-                behavior: SnackBarBehavior.floating,
-              ),
-            );
-          } else if (state is TripOptimizerError) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text(state.message), backgroundColor: Colors.red),
-            );
-          }
-        },
-        child: ListView.builder(
-          physics: const BouncingScrollPhysics(),
-          padding: const EdgeInsets.only(left: 16.0, right: 16.0, top: 12.0, bottom: 120.0),
-          itemCount: _localItinerary.length + 1,
-          itemBuilder: (context, index) {
-            if (index == _localItinerary.length) {
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 24.0, top: 8.0),
-                child: Column(
-                  children: [
-                    ElevatedButton.icon(
-                      onPressed: () {
-                        setState(() {
-                          _localItinerary.add(
-                            ItineraryDayEntity(
-                              day: _localItinerary.length + 1,
-                              places: [],
-                              estimatedWalkingKm: 0.0,
-                            ),
-                          );
-                        });
-                        _autoSave();
-
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Yeni gün eklendi! 🎉 Kendi mekanlarını ekleyebilirsin.'),
-                            backgroundColor: Colors.blueAccent,
-                            behavior: SnackBarBehavior.floating,
-                          ),
-                        );
-                      },
-                      style: ElevatedButton.styleFrom(
-                        minimumSize: const Size.fromHeight(54),
-                        backgroundColor: Colors.white.withOpacity(0.05),
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(20),
-                          side: const BorderSide(color: Colors.white38, width: 1.5),
-                        ),
-                        elevation: 0,
-                      ),
-                      icon: const Icon(Icons.calendar_month, size: 24),
-                      label: const Text(
-                        'Yeni Gün Ekle 📅',
-                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                      ),
+      body: Column(
+        children: [
+          _buildBudgetTracker(),
+          Expanded(
+            child: BlocListener<TripOptimizerCubit, TripOptimizerState>(
+              listener: (context, state) {
+                if (state is ItinerarySaved) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Rota Başarıyla Kaydedildi! 💾'),
+                      backgroundColor: Colors.green,
+                      behavior: SnackBarBehavior.floating,
                     ),
-                    const SizedBox(height: 16),
-                    ElevatedButton.icon(
-                      onPressed: () {
-                        context.read<TripOptimizerCubit>().saveItinerary(_localItinerary);
-                      },
-                      style: ElevatedButton.styleFrom(
-                        minimumSize: const Size.fromHeight(56),
-                        backgroundColor: Colors.blueAccent,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        elevation: 4,
-                      ),
-                      icon: const Icon(Icons.save, size: 24),
-                      label: const Text(
-                        'Rotayı Kaydet 💾',
-                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            }
-
-            final dayPlan = _localItinerary[index];
-
-            return Container(
-              margin: const EdgeInsets.only(bottom: 24.0),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(24),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.blueGrey.withOpacity(0.08),
-                    blurRadius: 20,
-                    spreadRadius: 2,
-                    offset: const Offset(0, 8),
-                  ),
-                ],
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 16),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [Colors.blue.shade800, Colors.blue.shade400],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Expanded(
-                          child: FittedBox(
-                            fit: BoxFit.scaleDown,
-                            alignment: Alignment.centerLeft,
-                            child: Row(
-                              children: [
-                                Text(
-                                  '${dayPlan.day}. Gün',
-                                  style: const TextStyle(
-                                    fontSize: 22,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.white,
-                                    letterSpacing: 0.5,
-                                  ),
-                                ),
-                                if (dayPlan.places.isNotEmpty) ...[
-                                  const SizedBox(width: 10),
-                                  Container(
-                                    height: 24,
-                                    width: 1,
-                                    color: Colors.white38,
-                                  ),
-                                  const SizedBox(width: 10),
-                                  DayWeatherBadge(
-                                    lat: dayPlan.places.first.lat,
-                                    lng: dayPlan.places.first.lng,
-                                  ),
-                                ]
-                              ],
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            IconButton(
-                              onPressed: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (context) => DayMapView(dayPlan: dayPlan),
+                  );
+                } else if (state is TripOptimizerError) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text(state.message), backgroundColor: Colors.red),
+                  );
+                }
+              },
+              child: ListView.builder(
+                physics: const BouncingScrollPhysics(),
+                padding: const EdgeInsets.only(left: 16.0, right: 16.0, top: 4.0, bottom: 120.0),
+                itemCount: _localItinerary.length + 1,
+                itemBuilder: (context, index) {
+                  if (index == _localItinerary.length) {
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 24.0, top: 8.0),
+                      child: Column(
+                        children: [
+                          ElevatedButton.icon(
+                            onPressed: () {
+                              setState(() {
+                                _localItinerary.add(
+                                  ItineraryDayEntity(
+                                    day: _localItinerary.length + 1,
+                                    places: [],
+                                    estimatedWalkingKm: 0.0,
                                   ),
                                 );
-                              },
-                              icon: const Icon(Icons.map_outlined, color: Colors.white),
-                              tooltip: 'Haritada Gör',
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints(),
+                              });
+                              _autoSave();
+
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Yeni gün eklendi! 🎉 Kendi mekanlarını ekleyebilirsin.'),
+                                  backgroundColor: Colors.blueAccent,
+                                  behavior: SnackBarBehavior.floating,
+                                ),
+                              );
+                            },
+                            style: ElevatedButton.styleFrom(
+                              minimumSize: const Size.fromHeight(54),
+                              backgroundColor: Colors.white.withOpacity(0.05),
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(20),
+                                side: const BorderSide(color: Colors.white38, width: 1.5),
+                              ),
+                              elevation: 0,
                             ),
-                            const SizedBox(width: 8),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                              decoration: BoxDecoration(
-                                color: Colors.white.withOpacity(0.25),
+                            icon: const Icon(Icons.calendar_month, size: 24),
+                            label: const Text(
+                              'Yeni Gün Ekle 📅',
+                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          ElevatedButton.icon(
+                            onPressed: () {
+                              context.read<TripOptimizerCubit>().saveItinerary(_localItinerary);
+                            },
+                            style: ElevatedButton.styleFrom(
+                              minimumSize: const Size.fromHeight(56),
+                              backgroundColor: Colors.blueAccent,
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(20),
                               ),
-                              child: Row(
-                                children: [
-                                  const Icon(Icons.directions_walk, color: Colors.white, size: 16),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    '${dayPlan.estimatedWalkingKm.toStringAsFixed(1)} km',
-                                    style: const TextStyle(
-                                      fontSize: 13,
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ],
-                              ),
+                              elevation: 4,
                             ),
-                          ],
+                            icon: const Icon(Icons.save, size: 24),
+                            label: const Text(
+                              'Rotayı Kaydet 💾',
+                              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }
+
+                  final dayPlan = _localItinerary[index];
+
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 24.0),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1E293B),
+                      borderRadius: BorderRadius.circular(24),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.2),
+                          blurRadius: 15,
+                          offset: const Offset(0, 8),
                         ),
                       ],
                     ),
-                  ),
-
-                  dayPlan.places.isEmpty
-                      ? const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 24.0),
-                    child: Center(
-                      child: Text(
-                        'Bu gün için henüz mekan eklemedin.',
-                        style: TextStyle(color: Colors.black54, fontStyle: FontStyle.italic),
-                      ),
-                    ),
-                  )
-                      : ReorderableListView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    itemCount: dayPlan.places.length,
-                    onReorder: (int oldIndex, int newIndex) {
-                      setState(() {
-                        if (oldIndex < newIndex) {
-                          newIndex -= 1;
-                        }
-                        final SpotEntity item = dayPlan.places.removeAt(oldIndex);
-                        dayPlan.places.insert(newIndex, item);
-                      });
-                      _autoSave();
-                    },
-                    itemBuilder: (context, spotIndex) {
-                      final spot = dayPlan.places[spotIndex];
-
-                      return Dismissible(
-                        key: ValueKey(spot.name + spotIndex.toString()),
-                        direction: DismissDirection.endToStart,
-                        background: Container(
-                          alignment: Alignment.centerRight,
-                          padding: const EdgeInsets.only(right: 20.0),
-                          color: Colors.red.shade400,
-                          child: const Icon(Icons.delete_sweep, color: Colors.white, size: 28),
-                        ),
-                        onDismissed: (direction) {
-                          setState(() {
-                            dayPlan.places.removeAt(spotIndex);
-                          });
-                          _autoSave();
-
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text('${spot.name} rotadan çıkarıldı! 🗑️'),
-                              backgroundColor: Colors.black87,
-                              behavior: SnackBarBehavior.floating,
-                              duration: const Duration(seconds: 2),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 16),
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [Colors.blue.shade800, Colors.blue.shade400],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
                             ),
-                          );
-                        },
-                        child: ListTile(
-                          key: ValueKey('list_tile_${spot.name}_$spotIndex'),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-                          leading: spot.imagePath != null
-                              ? ClipRRect(
-                            borderRadius: BorderRadius.circular(12),
-                            child: Image.file(
-                              File(spot.imagePath!),
-                              width: 50,
-                              height: 50,
-                              fit: BoxFit.cover,
-                            ),
-                          )
-                              : Container(
-                            width: 50,
-                            height: 50,
-                            decoration: BoxDecoration(
-                              color: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.4),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Icon(
-                              _getCategoryIcon(spot.category),
-                              color: Theme.of(context).colorScheme.primary,
-                              size: 24,
-                            ),
+                            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
                           ),
-                          title: Text(
-                            '${spotIndex + 1}. ${spot.name}',
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w800,
-                              fontSize: 16,
-                              color: Colors.black87,
-                            ),
-                          ),
-                          subtitle: Padding(
-                            padding: const EdgeInsets.only(top: 6.0),
-                            child: Row(
-                              children: [
-                                Text(
-                                  spot.category.toUpperCase(),
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w700,
-                                    color: Colors.grey.shade500,
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                const Icon(Icons.star_rounded, color: Colors.amber, size: 16),
-                                const SizedBox(width: 2),
-                                Text(
-                                  spot.rating.toString(),
-                                  style: const TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.black54,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          // YENİ: Harita butonu buraya, fiyat bilgisinin soluna eklendi
-                          trailing: Row(
-                            mainAxisSize: MainAxisSize.min,
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              IconButton(
-                                padding: EdgeInsets.zero,
-                                constraints: const BoxConstraints(),
-                                icon: const Icon(Icons.directions, color: Colors.blueAccent, size: 26),
-                                tooltip: 'Yol Tarifi Al',
-                                onPressed: () => _launchMaps(spot.lat, spot.lng, spot.name),
-                              ),
-                              const SizedBox(width: 12),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                decoration: BoxDecoration(
-                                  color: spot.entryFee > 0 ? Colors.grey.shade100 : Colors.green.shade50,
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Text(
-                                  spot.entryFee > 0 ? '${spot.entryFee} ₺' : 'Ücretsiz',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w800,
-                                    fontSize: 13,
-                                    color: spot.entryFee > 0 ? Colors.black87 : Colors.green.shade700,
+                              Expanded(
+                                child: FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  alignment: Alignment.centerLeft,
+                                  child: Row(
+                                    children: [
+                                      Text(
+                                        '${dayPlan.day}. Gün',
+                                        style: const TextStyle(
+                                          fontSize: 22,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.white,
+                                          letterSpacing: 0.5,
+                                        ),
+                                      ),
+                                      if (dayPlan.places.isNotEmpty) ...[
+                                        const SizedBox(width: 10),
+                                        Container(
+                                          height: 24,
+                                          width: 1,
+                                          color: Colors.white38,
+                                        ),
+                                        const SizedBox(width: 10),
+                                        DayWeatherBadge(
+                                          lat: dayPlan.places.first.lat,
+                                          lng: dayPlan.places.first.lng,
+                                        ),
+                                      ]
+                                    ],
                                   ),
                                 ),
                               ),
                               const SizedBox(width: 8),
-                              const Icon(Icons.drag_handle, color: Colors.grey),
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  IconButton(
+                                    onPressed: () {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (context) => DayMapView(dayPlan: dayPlan),
+                                        ),
+                                      );
+                                    },
+                                    icon: const Icon(Icons.map_outlined, color: Colors.white),
+                                    tooltip: 'Haritada Gör',
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withOpacity(0.25),
+                                      borderRadius: BorderRadius.circular(20),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        const Icon(Icons.directions_walk, color: Colors.white, size: 16),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          '${dayPlan.estimatedWalkingKm.toStringAsFixed(1)} km',
+                                          style: const TextStyle(
+                                            fontSize: 13,
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ],
                           ),
                         ),
-                      );
-                    },
-                  ),
 
-                  Padding(
-                    padding: const EdgeInsets.only(left: 20, right: 20, bottom: 16, top: 4),
-                    child: TextButton.icon(
-                      onPressed: () => _showAddCustomSpotModal(context, index),
-                      icon: const Icon(Icons.add_circle_outline, size: 20),
-                      label: const Text('Kendi Mekanını Ekle', style: TextStyle(fontWeight: FontWeight.bold)),
-                      style: TextButton.styleFrom(
-                        foregroundColor: Colors.blueAccent,
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        backgroundColor: Colors.blue.shade50,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
+                        dayPlan.places.isEmpty
+                            ? const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 24.0),
+                          child: Center(
+                            child: Text(
+                              'Bu gün için henüz mekan eklemedin.',
+                              style: TextStyle(color: Colors.white54, fontStyle: FontStyle.italic),
+                            ),
+                          ),
+                        )
+                            : ReorderableListView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          itemCount: dayPlan.places.length,
+                          onReorder: (int oldIndex, int newIndex) {
+                            setState(() {
+                              if (oldIndex < newIndex) {
+                                newIndex -= 1;
+                              }
+                              final SpotEntity item = dayPlan.places.removeAt(oldIndex);
+                              dayPlan.places.insert(newIndex, item);
+                            });
+                            _autoSave();
+                          },
+                          itemBuilder: (context, spotIndex) {
+                            final spot = dayPlan.places[spotIndex];
+
+                            return Dismissible(
+                              key: ValueKey(spot.name + spotIndex.toString()),
+                              direction: DismissDirection.endToStart,
+                              background: Container(
+                                alignment: Alignment.centerRight,
+                                padding: const EdgeInsets.only(right: 20.0),
+                                color: Colors.red.shade400,
+                                child: const Icon(Icons.delete_sweep, color: Colors.white, size: 28),
+                              ),
+                              onDismissed: (direction) {
+                                setState(() {
+                                  dayPlan.places.removeAt(spotIndex);
+                                });
+                                _autoSave();
+
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('${spot.name} rotadan çıkarıldı! 🗑️'),
+                                    backgroundColor: Colors.black87,
+                                    behavior: SnackBarBehavior.floating,
+                                    duration: const Duration(seconds: 2),
+                                  ),
+                                );
+                              },
+                              child: ListTile(
+                                key: ValueKey('list_tile_${spot.name}_$spotIndex'),
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                                leading: ClipRRect(
+                                  borderRadius: BorderRadius.circular(12),
+                                  child: spot.imagePath != null
+                                      ? Image.file(
+                                    File(spot.imagePath!),
+                                    width: 55,
+                                    height: 55,
+                                    fit: BoxFit.cover,
+                                  )
+                                      : spot.imageUrl != null && spot.imageUrl!.isNotEmpty
+                                      ? Image.network(
+                                    spot.imageUrl!,
+                                    width: 55,
+                                    height: 55,
+                                    fit: BoxFit.cover,
+                                    loadingBuilder: (context, child, loadingProgress) {
+                                      if (loadingProgress == null) return child;
+                                      return Container(
+                                        width: 55,
+                                        height: 55,
+                                        color: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.2),
+                                        child: const Center(
+                                          child: SizedBox(
+                                            width: 20,
+                                            height: 20,
+                                            child: CircularProgressIndicator(strokeWidth: 2),
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                    errorBuilder: (context, error, stackTrace) => Container(
+                                      width: 55,
+                                      height: 55,
+                                      decoration: BoxDecoration(
+                                        color: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.4),
+                                      ),
+                                      child: Icon(
+                                        _getCategoryIcon(spot.category),
+                                        color: Theme.of(context).colorScheme.primary,
+                                        size: 24,
+                                      ),
+                                    ),
+                                  )
+                                      : Container(
+                                    width: 55,
+                                    height: 55,
+                                    decoration: BoxDecoration(
+                                      color: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.4),
+                                    ),
+                                    child: Icon(
+                                      _getCategoryIcon(spot.category),
+                                      color: Theme.of(context).colorScheme.primary,
+                                      size: 24,
+                                    ),
+                                  ),
+                                ),
+                                title: Text(
+                                  '${spotIndex + 1}. ${spot.name}',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 16,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                                subtitle: Padding(
+                                  padding: const EdgeInsets.only(top: 6.0),
+                                  child: Row(
+                                    children: [
+                                      Text(
+                                        spot.category.toUpperCase(),
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w700,
+                                          color: Colors.grey.shade400,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      const Icon(Icons.star_rounded, color: Colors.amber, size: 16),
+                                      const SizedBox(width: 2),
+                                      Text(
+                                        spot.rating.toString(),
+                                        style: const TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.white70,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    IconButton(
+                                      padding: EdgeInsets.zero,
+                                      constraints: const BoxConstraints(),
+                                      icon: const Icon(Icons.directions, color: Colors.blueAccent, size: 26),
+                                      tooltip: 'Yol Tarifi Al',
+                                      onPressed: () => _launchMaps(spot.lat, spot.lng, spot.name),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                      decoration: BoxDecoration(
+                                        color: spot.entryFee > 0 ? Colors.white.withOpacity(0.05) : Colors.greenAccent.withOpacity(0.1),
+                                        borderRadius: BorderRadius.circular(8),
+                                        border: Border.all(
+                                          color: spot.entryFee > 0 ? Colors.white12 : Colors.greenAccent.withOpacity(0.5),
+                                        ),
+                                      ),
+                                      child: Text(
+                                        spot.entryFee > 0 ? '${spot.entryFee} ₺' : 'Ücretsiz',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w800,
+                                          fontSize: 13,
+                                          color: spot.entryFee > 0 ? Colors.white : Colors.greenAccent,
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    const Icon(Icons.drag_handle, color: Colors.grey),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
                         ),
-                      ),
+
+                        Padding(
+                          padding: const EdgeInsets.only(left: 20, right: 20, bottom: 16, top: 4),
+                          child: TextButton.icon(
+                            onPressed: () => _showAddCustomSpotModal(context, index),
+                            icon: const Icon(Icons.add_circle_outline, size: 20),
+                            label: const Text('Kendi Mekanını Ekle', style: TextStyle(fontWeight: FontWeight.bold)),
+                            style: TextButton.styleFrom(
+                              foregroundColor: Colors.blueAccent,
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              backgroundColor: Colors.blueAccent.withOpacity(0.1),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
-                ],
+                  );
+                },
               ),
-            );
-          },
-        ),
+            ),
+          ),
+        ],
       ),
     );
   }

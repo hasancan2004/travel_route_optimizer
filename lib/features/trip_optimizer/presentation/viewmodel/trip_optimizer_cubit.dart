@@ -2,6 +2,7 @@ import 'dart:math';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:dio/dio.dart'; // YENİ: Dio hatalarını yakalamak için
 import '../../domain/entities/itinerary_day_entity.dart';
 import '../../domain/entities/spot_entity.dart';
 import '../../domain/repositories/trip_repository.dart';
@@ -15,11 +16,8 @@ class TripOptimizerCubit extends Cubit<TripOptimizerState> {
   final OptimizeRouteUseCase optimizeRouteUseCase;
   final TripRepository repository;
 
-  // Bütçe asistanı için kalıcı state verileri
   double currentTotalBudget = 0.0;
   List<Map<String, dynamic>> extraExpenses = [];
-
-  // Hangi şehirde olduğumuzu buluta yazmak için hafızada tutuyoruz
   String currentCity = "Bilinmeyen Şehir";
 
   TripOptimizerCubit({
@@ -31,7 +29,7 @@ class TripOptimizerCubit extends Cubit<TripOptimizerState> {
   Future<void> fetchCitySpots(String city) async {
     emit(TripOptimizerLoading());
     try {
-      currentCity = city; // Şehri bulut kaydı için hafızaya al
+      currentCity = city;
       final spots = await getCitySpotsUseCase(city);
       emit(CitySpotsLoaded(spots));
     } catch (e) {
@@ -48,9 +46,8 @@ class TripOptimizerCubit extends Cubit<TripOptimizerState> {
   }) async {
     emit(TripOptimizerLoading());
     try {
-      // Rota ilk oluşturulurken girilen bütçeyi hafızaya alıyoruz
       currentTotalBudget = maxBudget;
-      extraExpenses.clear(); // Yeni rotada eski ekstraları temizle
+      extraExpenses.clear();
 
       final params = OptimizeRouteParams(
         userInterests: userInterests,
@@ -60,9 +57,27 @@ class TripOptimizerCubit extends Cubit<TripOptimizerState> {
         places: places,
       );
       final itinerary = await optimizeRouteUseCase(params);
-      emit(RouteOptimized(itinerary));
+
+      // Eğer backend boş bir liste dönerse (Mekan yoksa vb.)
+      if (itinerary.isEmpty) {
+        emit(const TripOptimizerError("Bu parametrelerle rota çizilemedi. Lütfen şehir veya bütçe değiştirin."));
+      } else {
+        emit(RouteOptimized(itinerary));
+      }
+
     } catch (e) {
-      emit(TripOptimizerError("Rota oluşturulurken hata oluştu: ${e.toString()}"));
+      // YENİ ZIRH: DioException (Network/HTTP) hatalarını ayıkla ve insancıl hale getir.
+      if (e is DioException) {
+        if (e.response != null && e.response?.data is Map) {
+          final errorData = e.response?.data as Map;
+          final detail = errorData['detail'] ?? "Sunucu işleyemedi.";
+          emit(TripOptimizerError("Sunucu Hatası: $detail"));
+        } else {
+          emit(TripOptimizerError("Sunucuya ulaşılamadı. Lütfen bağlantınızı kontrol edin."));
+        }
+      } else {
+        emit(TripOptimizerError("Rota oluşturulamadı: ${e.toString()}"));
+      }
     }
   }
 
@@ -76,13 +91,9 @@ class TripOptimizerCubit extends Cubit<TripOptimizerState> {
     emit(BudgetUpdatedState());
   }
 
-  // Manuel Kaydetme (Hem Yerele Hem Supabase Buluta)
   Future<void> saveItinerary(List<ItineraryDayEntity> itinerary) async {
     try {
-      // 1. Önce Hive'a (Çevrimdışı yerel veritabanına) kaydet
       await repository.saveItinerary(itinerary);
-
-      // 2. Supabase oturum açmış olan gerçek kullanıcının ID'sini alıyoruz
       final currentUserId = Supabase.instance.client.auth.currentUser?.id;
 
       if (currentUserId != null) {
@@ -98,16 +109,14 @@ class TripOptimizerCubit extends Cubit<TripOptimizerState> {
           debugPrint("Buluta kayıt hatası (Lokalde güvende): $cloudError");
         }
       } else {
-        debugPrint("Kullanıcı oturum açmadığı için rota sadece yerel hafızaya (Hive) kaydedildi.");
+        debugPrint("Kullanıcı oturum açmadığı için rota sadece yerel hafızaya kaydedildi.");
       }
-
       emit(ItinerarySaved());
     } catch (e) {
       emit(TripOptimizerError("Rota kaydedilirken hata oluştu: ${e.toString()}"));
     }
   }
 
-  // Sessiz Otomatik Kaydetme (Sadece Yerele)
   Future<void> autoSaveItinerary(List<ItineraryDayEntity> itinerary) async {
     try {
       await repository.saveItinerary(itinerary);
@@ -126,19 +135,16 @@ class TripOptimizerCubit extends Cubit<TripOptimizerState> {
     }
   }
 
-  // Sadece istatistik sayfası için sessizce veriyi çeken metot
   Future<void> loadTravelerStats() async {
     emit(TripOptimizerLoading());
     try {
       final savedItineraries = await repository.getSavedItineraries();
-      // SavedItinerariesLoaded yerine yeni state'imizi yayıyoruz:
       emit(TravelerStatsLoaded(savedItineraries));
     } catch (e) {
       emit(TripOptimizerError("İstatistikler getirilirken hata: ${e.toString()}"));
     }
   }
 
-  // Keşfet ekranı için topluluk rotalarını çekme
   Future<void> exploreItineraries() async {
     emit(TripOptimizerLoading());
     try {
@@ -149,12 +155,11 @@ class TripOptimizerCubit extends Cubit<TripOptimizerState> {
     }
   }
 
-  // Rotayı topluluk havuzunda paylaşma
   Future<void> shareItinerary({
     required String title,
     required List<ItineraryDayEntity> itinerary,
-    String? city, // Opsiyonel: Eğer dışarıdan şehir gönderilirse onu baz al
-    double? budget, // Opsiyonel: Özel bütçe
+    String? city,
+    double? budget,
   }) async {
     emit(TripOptimizerLoading());
     try {
@@ -162,7 +167,6 @@ class TripOptimizerCubit extends Cubit<TripOptimizerState> {
       final userId = currentUser?.id ?? "anonim_kullanici";
       final authorName = currentUser?.email?.split('@').first ?? "Gezgin";
 
-      // Eğer dışarıdan city veya budget gelmediyse Cubit'in mevcut hafızasındakini kullan
       final targetCity = (city != null && city.isNotEmpty) ? city : currentCity;
       final targetBudget = budget ?? currentTotalBudget;
 
@@ -174,10 +178,61 @@ class TripOptimizerCubit extends Cubit<TripOptimizerState> {
         maxBudget: targetBudget,
         itinerary: itinerary,
       );
-
       emit(ItinerarySharedSuccessfully());
     } catch (e) {
       emit(TripOptimizerError("Rota paylaşılırken hata oluştu: ${e.toString()}"));
+    }
+  }
+
+  // YENİ: Tamamen otonom Yapay Zeka Akışı
+  Future<void> generateRouteFromAIFlow(String prompt) async {
+    emit(TripOptimizerLoading());
+    try {
+      // 1. AI'dan parametreleri al (Sayı/Metin hatalarına karşı korumalı)
+      final aiParams = await repository.analyzePromptWithAI(prompt);
+
+      final city = aiParams['city']?.toString() ?? 'İstanbul';
+      double budget = double.tryParse(aiParams['max_budget'].toString()) ?? 1000.0;
+      int days = int.tryParse(aiParams['total_days'].toString()) ?? 2;
+
+      List<String> interests = ['history'];
+      if (aiParams['user_interests'] is List) {
+        interests = List<String>.from(aiParams['user_interests'].map((e) => e.toString()));
+        if (interests.isEmpty) interests = ['history'];
+      }
+
+      // 2. Mekanları sessizce çek (CitySpotsLoaded YAYINLAMIYORUZ)
+      currentCity = city;
+      final spots = await getCitySpotsUseCase(city);
+
+      if (spots.isEmpty) {
+        emit(const TripOptimizerError("Bu şehir için uygun mekan bulunamadı."));
+        return;
+      }
+
+      // 3. Rotayı sessizce optimize et
+      currentTotalBudget = budget;
+      extraExpenses.clear();
+
+      final params = OptimizeRouteParams(
+        userInterests: interests,
+        maxBudget: budget,
+        totalDays: days,
+        maxWalkPerDay: 5.0,
+        places: spots,
+      );
+
+      final itinerary = await optimizeRouteUseCase(params);
+
+      if (itinerary.isEmpty) {
+        emit(const TripOptimizerError("Mekanlar bulundu ancak ayarlara uygun rota çizilemedi."));
+        return;
+      }
+
+      // 4. Her şey sorunsuz bittiyse tek seferde ekrana yansıt
+      emit(RouteOptimized(itinerary));
+    } catch (e) {
+      emit(TripOptimizerError("AI Asistan Hatası: ${e.toString()}"));
     }
   }
 }

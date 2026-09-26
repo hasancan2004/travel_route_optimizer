@@ -12,12 +12,15 @@ import 'injection_container.dart' as di;
 import 'features/trip_optimizer/data/models/spot_model.dart';
 import 'features/trip_optimizer/data/models/itinerary_day_model.dart';
 import 'core/services/notification_service.dart';
-
 import 'features/auth/presentation/viewmodel/auth_cubit.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await _initializeServices();
+  runApp(const TripOptimizerApp());
+}
 
+Future<void> _initializeServices() async {
   try {
     // 1. .env yükleniyor
     await dotenv.load(fileName: ".env");
@@ -33,6 +36,7 @@ void main() async {
 
     await Supabase.initialize(
       url: supabaseUrl,
+      // ignore: deprecated_member_use
       anonKey: supabaseKey,
     );
     log("✅ Supabase başlatıldı.");
@@ -52,76 +56,76 @@ void main() async {
     await di.init();
     log("✅ GetIt bağımlılıkları yüklendi.");
 
-    // 5. Bildirim Servisi (Hata verirse uygulamanın açılmasını engellemesin diye try-catch içinde)
+    // 5. Bildirim Servisi
     try {
       await NotificationService().init();
       log("✅ Bildirim servisi başlatıldı.");
     } catch (e) {
       log("⚠️ Bildirim servisi başlatılamadı: $e");
     }
-
   } catch (e, stackTrace) {
-    log("💥 ANA BAŞLANGIÇ HATASI: $e");
-    log(stackTrace.toString());
+    log("💥 ANA BAŞLANGIÇ HATASI: $e\n$stackTrace");
+    rethrow;
   }
-
-  runApp(const MyApp());
 }
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+class TripOptimizerApp extends StatelessWidget {
+  const TripOptimizerApp({super.key});
 
   @override
   Widget build(BuildContext context) {
+    // Init main()'da tamamlandı, direkt app'i yükle
     return MultiBlocProvider(
       providers: [
         BlocProvider(create: (_) => di.sl<AuthCubit>()),
         BlocProvider(create: (_) => di.sl<TripOptimizerCubit>()),
       ],
       child: MaterialApp(
-        title: 'Trip Optimizer',
-        debugShowCheckedModeBanner: false,
-        theme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(seedColor: Colors.blueAccent),
-          useMaterial3: true,
-        ),
-        darkTheme: ThemeData(
-          brightness: Brightness.dark,
-          colorScheme: ColorScheme.fromSeed(
-            seedColor: Colors.blueAccent,
-            brightness: Brightness.dark,
-          ),
-          useMaterial3: true,
-          scaffoldBackgroundColor: const Color(0xFF0F172A),
-          cardColor: const Color(0xFF1E293B),
-          dialogBackgroundColor: const Color(0xFF1E293B),
-          textTheme: ThemeData.dark().textTheme.apply(
-            bodyColor: Colors.white,
-            displayColor: Colors.white,
-          ),
-          inputDecorationTheme: InputDecorationTheme(
-            filled: true,
-            fillColor: const Color(0xFF0F172A),
-            hintStyle: TextStyle(color: Colors.grey.shade400),
-            labelStyle: const TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold),
-            floatingLabelStyle: const TextStyle(color: Colors.blueAccent),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: Colors.grey.shade700),
+            title: 'Trip Optimizer',
+            debugShowCheckedModeBanner: false,
+            theme: ThemeData(
+              colorScheme: ColorScheme.fromSeed(seedColor: Colors.blueAccent),
+              useMaterial3: true,
             ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: Colors.grey.shade800),
+            darkTheme: ThemeData(
+              brightness: Brightness.dark,
+              colorScheme: ColorScheme.fromSeed(
+                seedColor: Colors.blueAccent,
+                brightness: Brightness.dark,
+              ),
+              useMaterial3: true,
+              scaffoldBackgroundColor: const Color(0xFF0F172A),
+              cardColor: const Color(0xFF1E293B),
+              dialogTheme: const DialogThemeData(
+                backgroundColor: Color(0xFF1E293B),
+              ),
+              textTheme: ThemeData.dark().textTheme.apply(
+                bodyColor: Colors.white,
+                displayColor: Colors.white,
+              ),
+              inputDecorationTheme: InputDecorationTheme(
+                filled: true,
+                fillColor: const Color(0xFF0F172A),
+                hintStyle: TextStyle(color: Colors.grey.shade400),
+                labelStyle: const TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold),
+                floatingLabelStyle: const TextStyle(color: Colors.blueAccent),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: Colors.grey.shade700),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: Colors.grey.shade800),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: Colors.blueAccent, width: 2),
+                ),
+              ),
             ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: Colors.blueAccent, width: 2),
-            ),
+            themeMode: ThemeMode.dark,
+            home: const LoginView(),
           ),
-        ),
-        themeMode: ThemeMode.dark,
-        home: const LoginView(),
-      ),
     );
   }
 }

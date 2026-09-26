@@ -38,8 +38,13 @@ class SpotModel extends SpotEntity {
   final String? imagePath;
 
   @override
-  @HiveField(8, defaultValue: false) // YENİ: Yağmur / hava durumu optimizasyonu için açık hava alanı
+  @HiveField(8, defaultValue: false)
   final bool isOutdoor;
+
+  // YENİ: Backend'den gelen Google Places fotoğraf URL'sini karşılayan alan
+  @override
+  @HiveField(9)
+  final String? imageUrl;
 
   const SpotModel({
     required this.name,
@@ -50,7 +55,8 @@ class SpotModel extends SpotEntity {
     required this.lng,
     this.calculatedScore,
     this.imagePath,
-    this.isOutdoor = false, // YENİ
+    this.isOutdoor = false,
+    this.imageUrl, // YENİ
   }) : super(
     name: name,
     category: category,
@@ -60,7 +66,8 @@ class SpotModel extends SpotEntity {
     lng: lng,
     calculatedScore: calculatedScore,
     imagePath: imagePath,
-    isOutdoor: isOutdoor, // YENİ
+    isOutdoor: isOutdoor,
+    imageUrl: imageUrl, // YENİ
   );
 
   factory SpotModel.fromJson(Map<String, dynamic> json) {
@@ -75,7 +82,8 @@ class SpotModel extends SpotEntity {
           ? (json['calculated_score'] as num).toDouble()
           : null,
       imagePath: json['imagePath'],
-      isOutdoor: json['is_outdoor'] ?? json['isOutdoor'] ?? false, // YENİ
+      isOutdoor: json['is_outdoor'] ?? json['isOutdoor'] ?? false,
+      imageUrl: json['image_url'] ?? json['imageUrl'], // YENİ: JSON'dan gelen veriyi alıyoruz
     );
   }
 }

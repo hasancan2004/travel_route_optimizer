@@ -36,11 +36,15 @@ abstract class TripRemoteDataSource {
   });
 
   Future<List<List<ItineraryDayModel>>> getUserItinerariesFromCloud(String userId);
+
+  Future<Map<String, dynamic>> analyzePromptWithAI(String prompt);
 }
 
 class TripRemoteDataSourceImpl implements TripRemoteDataSource {
   final Dio dio;
   final String baseUrl = 'https://travel-optimizer-api.onrender.com';
+  //final String baseUrl = 'http://10.0.2.2:8000';
+
 
   TripRemoteDataSourceImpl({required this.dio});
 
@@ -188,6 +192,31 @@ class TripRemoteDataSourceImpl implements TripRemoteDataSource {
       }
     } catch (e) {
       throw Exception('Buluttan veri getirilirken hata: $e');
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> analyzePromptWithAI(String prompt) async {
+    try {
+      final response = await dio.post(
+        '$baseUrl/ai-analyze-prompt',
+        data: {"prompt": prompt},
+      );
+
+      if (response.statusCode == 200) {
+        return response.data['data'] as Map<String, dynamic>;
+      } else {
+        throw Exception('Sunucu Hatası: ${response.statusCode}');
+      }
+    } on DioException catch (e) {
+      // YENİ: Dio'nun uzun ingilizce hatası yerine backend'den gelen asıl "detail" mesajını çekiyoruz!
+      final errorData = e.response?.data;
+      final errorMessage = errorData != null && errorData['detail'] != null
+          ? errorData['detail']
+          : e.message;
+      throw Exception('Backend Diyor ki: $errorMessage');
+    } catch (e) {
+      throw Exception('Bilinmeyen Hata: $e');
     }
   }
 }

@@ -223,4 +223,10 @@ class TripRepositoryImpl implements TripRepository {
       itinerary: itineraryJson,
     );
   }
+
+  // YENİ: AI İstek Fonksiyonu
+  @override
+  Future<Map<String, dynamic>> analyzePromptWithAI(String prompt) async {
+    return await remoteDataSource.analyzePromptWithAI(prompt);
+  }
 }

@@ -31,10 +31,8 @@ class RouteOptimized extends TripOptimizerState {
   List<Object?> get props => [itinerary];
 }
 
-// YENİ: Rota başarıyla kaydedildiğinde arayüzü tetikleyecek state
 class ItinerarySaved extends TripOptimizerState {}
 
-// YENİ: Kayıtlı rotalar veritabanından çekildiğinde arayüzü tetikleyecek state
 class SavedItinerariesLoaded extends TripOptimizerState {
   final List<List<ItineraryDayEntity>> savedItineraries;
 
@@ -55,7 +53,6 @@ class TripOptimizerError extends TripOptimizerState {
 
 class BudgetUpdatedState extends TripOptimizerState {}
 
-// YENİ: Topluluk keşfet rotaları yüklendiğinde arayüzü tetikleyecek state
 class PublicItinerariesLoaded extends TripOptimizerState {
   final List<Map<String, dynamic>> publicItineraries;
 
@@ -65,11 +62,20 @@ class PublicItinerariesLoaded extends TripOptimizerState {
   List<Object?> get props => [publicItineraries];
 }
 
-// YENİ: Rota başarıyla toplulukta paylaşıldığında tetiklenecek state
 class ItinerarySharedSuccessfully extends TripOptimizerState {}
 
 class TravelerStatsLoaded extends TripOptimizerState {
   final List<List<ItineraryDayEntity>> itineraries;
 
   TravelerStatsLoaded(this.itineraries);
+}
+
+// YENİ: Yapay Zeka analizini bitirdiğinde arayüzü tetikleyecek state
+class AIPromptAnalyzed extends TripOptimizerState {
+  final Map<String, dynamic> aiParams;
+
+  const AIPromptAnalyzed(this.aiParams);
+
+  @override
+  List<Object?> get props => [aiParams];
 }

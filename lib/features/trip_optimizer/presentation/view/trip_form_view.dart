@@ -12,6 +12,7 @@ import '../viewmodel/trip_optimizer_state.dart';
 import 'explore_screen.dart';
 import 'itinerary_view.dart';
 import 'manage_categories_view.dart';
+import 'ai_chat_view.dart';
 
 class TripFormView extends StatefulWidget {
   const TripFormView({super.key});
@@ -46,7 +47,6 @@ class _TripFormViewState extends State<TripFormView> {
         elevation: 0,
         foregroundColor: Colors.white,
         actions: [
-          // trip_form_view.dart içindeki PopupMenuButton güncellenmiş hali
           PopupMenuButton<String>(
             icon: const Icon(Icons.more_vert, color: Colors.white),
             tooltip: "Seçenekler",
@@ -385,12 +385,31 @@ class _TripFormViewState extends State<TripFormView> {
                     },
                     child: const Text('Rotamı Optimize Et 🚀', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, letterSpacing: 1)),
                   ),
-                  const SizedBox(height: 20),
+                  // YENİ: Sayfa sonuna ekstra 100 piksel boşluk ekledik. Butonlar üst üste binmeyecek.
+                  const SizedBox(height: 100),
                 ],
               ),
             ),
           );
         },
+      ),
+      // AI butonunu doğal hizasında sabitledik
+      floatingActionButton: Padding(
+        padding: const EdgeInsets.only(bottom: 16.0, right: 8.0),
+        child: FloatingActionButton.extended(
+          onPressed: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const AiChatView()),
+            );
+          },
+          backgroundColor: Colors.amberAccent,
+          icon: const Icon(Icons.auto_awesome, color: Colors.black87),
+          label: const Text(
+            'AI Asistan',
+            style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold),
+          ),
+        ),
       ),
     );
   }
