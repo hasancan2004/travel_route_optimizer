@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:supabase_flutter/supabase_flutter.dart'; // YENİ: Supabase eklendi
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../viewmodel/trip_optimizer_cubit.dart';
 import '../viewmodel/trip_optimizer_state.dart';
 
@@ -18,13 +18,11 @@ class _ProfileViewState extends State<ProfileView> {
   @override
   void initState() {
     super.initState();
-    // Verileri sessizce çekmek için loadTravelerStats kullanıyoruz
     context.read<TripOptimizerCubit>().loadTravelerStats();
   }
 
   @override
   Widget build(BuildContext context) {
-    // YENİ: Oturum açmış kullanıcıyı Supabase'den dinamik olarak çekiyoruz
     final currentUser = Supabase.instance.client.auth.currentUser;
     final String displayName = currentUser?.userMetadata?['full_name'] ??
         (currentUser?.email?.split('@').first ?? 'Gizemli Gezgin');
@@ -42,6 +40,15 @@ class _ProfileViewState extends State<ProfileView> {
         builder: (context, state) {
           double totalWalkedKm = 0.0;
           int totalTrips = 0;
+          double totalSpent = 0.0;
+
+          // YENİ: Kategori sayaçlarını sıfırdan başlatıyoruz
+          Map<String, int> categoryCounts = {
+            'history': 0,
+            'nature': 0,
+            'shopping': 0,
+            'food': 0,
+          };
 
           if (state is TravelerStatsLoaded) {
             final itineraries = state.itineraries;
@@ -50,11 +57,19 @@ class _ProfileViewState extends State<ProfileView> {
             for (var itinerary in itineraries) {
               for (var day in itinerary) {
                 totalWalkedKm += day.estimatedWalkingKm;
+
+                // YENİ: Harcamaları ve kategorileri topluyoruz
+                for (var spot in day.places) {
+                  totalSpent += spot.entryFee;
+                  final cat = spot.category.toLowerCase();
+                  if (categoryCounts.containsKey(cat)) {
+                    categoryCounts[cat] = categoryCounts[cat]! + 1;
+                  }
+                }
               }
             }
           }
 
-          // Seviye Hesaplama (Her 15 km'de bir seviye atlama)
           int currentLevel = (totalWalkedKm / 15).floor() + 1;
           double currentLevelProgress = totalWalkedKm % 15;
           double progressPercentage = currentLevelProgress / 15.0;
@@ -87,13 +102,11 @@ class _ProfileViewState extends State<ProfileView> {
                       ),
                       const SizedBox(height: 16),
                       Text(
-                        // YENİ: Dinamik isim
                         displayName,
                         style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white),
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        // YENİ: Dinamik seviye unvanı
                         'Seviye $currentLevel Gezgini',
                         style: TextStyle(fontSize: 15, color: Colors.grey.shade400, fontWeight: FontWeight.w500),
                       ),
@@ -148,20 +161,9 @@ class _ProfileViewState extends State<ProfileView> {
                 ),
                 const SizedBox(height: 32),
 
-                // Kazanılan Başarımlar Başlığı
-                const Row(
-                  children: [
-                    Icon(Icons.emoji_events, color: Colors.amber, size: 24),
-                    SizedBox(width: 8),
-                    Text(
-                      'Fiziksel Aktiviteler',
-                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white),
-                    ),
-                  ],
-                ),
+                // YENİ: FİZİKSEL AKTİVİTELER
+                _buildSectionTitle('Fiziksel Aktiviteler', Icons.emoji_events, Colors.amber),
                 const SizedBox(height: 16),
-
-                // Dinamik Rozet Izgarası
                 GridView.count(
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
@@ -176,12 +178,64 @@ class _ProfileViewState extends State<ProfileView> {
                     _buildBadgeCard('Koşu Bandı Şampiyonu 🏃', '50 km hedefini aştın. Harika bir kardiyo!', totalWalkedKm >= 50, Colors.greenAccent),
                   ],
                 ),
+                const SizedBox(height: 32),
+
+                // YENİ: EKONOMİ & BÜTÇE
+                _buildSectionTitle('Ekonomi & Bütçe', Icons.account_balance_wallet, Colors.greenAccent),
+                const SizedBox(height: 16),
+                GridView.count(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  crossAxisCount: 2,
+                  mainAxisSpacing: 16,
+                  crossAxisSpacing: 16,
+                  childAspectRatio: 0.85,
+                  children: [
+                    _buildBadgeCard('Cüzdanı Açtık 💸', '100 ₺ barajını geçtin. İlk harcamalar yapıldı.', totalSpent >= 100, Colors.greenAccent),
+                    _buildBadgeCard('Bonkör Gezgin 💰', '5.000 ₺ harcadın. Kaliteden ödün vermiyorsun.', totalSpent >= 5000, Colors.amber),
+                    _buildBadgeCard('Sınırsız Bütçe 💎', '20.000 ₺! Limitleri tamamen kaldırdın.', totalSpent >= 20000, Colors.cyanAccent),
+                    _buildBadgeCard('Tutumlu Plan 📉', 'Rotayı 0 ₺ giriş ücretiyle tamamladın.', totalTrips > 0 && totalSpent == 0, Colors.tealAccent),
+                  ],
+                ),
+                const SizedBox(height: 32),
+
+                // YENİ: KEŞİF & KATEGORİ
+                _buildSectionTitle('Keşif & Kategori', Icons.explore, Colors.purpleAccent),
+                const SizedBox(height: 16),
+                GridView.count(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  crossAxisCount: 2,
+                  mainAxisSpacing: 16,
+                  crossAxisSpacing: 16,
+                  childAspectRatio: 0.85,
+                  children: [
+                    _buildBadgeCard('Tarih Avcısı 🏛️', '3 tarihi mekan keşfettin. Geçmişin izindesin.', categoryCounts['history']! >= 3, Colors.brown),
+                    _buildBadgeCard('Doğa Aşığı 🌲', '3 doğa parkı gezdin. Yeşile doyuyorsun.', categoryCounts['nature']! >= 3, Colors.lightGreenAccent),
+                    _buildBadgeCard('Gurme Gezgin 🍔', '3 restoran denedin. Damak tadını biliyorsun.', categoryCounts['food']! >= 3, Colors.deepOrangeAccent),
+                    _buildBadgeCard('Alışverişkoliği 🛍️', '3 mağaza gezdin. Alışveriş senin işin.', categoryCounts['shopping']! >= 3, Colors.pinkAccent),
+                  ],
+                ),
                 const SizedBox(height: 40),
               ],
             ),
           );
         },
       ),
+    );
+  }
+
+  // Arayüzü temiz tutmak için başlıkları çizen yardımcı widget
+  Widget _buildSectionTitle(String title, IconData icon, Color color) {
+    return Row(
+      children: [
+        Icon(icon, color: color, size: 24),
+        const SizedBox(width: 8),
+        Text(
+          title,
+          style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white),
+        ),
+      ],
     );
   }
 
