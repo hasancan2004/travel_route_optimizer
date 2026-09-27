@@ -491,9 +491,11 @@ class _ItineraryViewState extends State<ItineraryView> {
                                           color: Colors.white38,
                                         ),
                                         const SizedBox(width: 10),
+                                        // YENİ: Hava durumuna göre uyarı tetikleme eklendi
                                         DayWeatherBadge(
                                           lat: dayPlan.places.first.lat,
                                           lng: dayPlan.places.first.lng,
+                                          dayPlan: dayPlan, // Hangi gün olduğunu bilmesi için eklendi
                                         ),
                                       ]
                                     ],
@@ -794,8 +796,14 @@ class _ItineraryViewState extends State<ItineraryView> {
 class DayWeatherBadge extends StatefulWidget {
   final double lat;
   final double lng;
+  final ItineraryDayEntity dayPlan;
 
-  const DayWeatherBadge({super.key, required this.lat, required this.lng});
+  const DayWeatherBadge({
+    super.key,
+    required this.lat,
+    required this.lng,
+    required this.dayPlan,
+  });
 
   @override
   State<DayWeatherBadge> createState() => _DayWeatherBadgeState();
@@ -804,6 +812,7 @@ class DayWeatherBadge extends StatefulWidget {
 class _DayWeatherBadgeState extends State<DayWeatherBadge> {
   WeatherModel? _weather;
   bool _isLoading = true;
+  bool _alertShown = false;
 
   @override
   void initState() {
@@ -820,7 +829,88 @@ class _DayWeatherBadgeState extends State<DayWeatherBadge> {
         _weather = weather;
         _isLoading = false;
       });
+
+      // Hava kötüyse (Yağmur, Kar, Fırtına vb. ikonu varsa) uyarı göster
+      _checkWeatherAlerts();
     }
+  }
+
+  void _checkWeatherAlerts() {
+    if (_weather == null || _alertShown) return;
+
+    // OpenWeatherMap ikon kodları: 09d/n (çisenti), 10d/n (yağmur), 11d/n (fırtına), 13d/n (kar)
+    final String icon = _weather!.iconCode;
+    final bool isBadWeather = icon.startsWith('09') || icon.startsWith('10') || icon.startsWith('11') || icon.startsWith('13');
+
+    // Eğer hava kötüyse ve o günün rotasında 'Doğa' veya 'Tarih' (Açık hava potansiyelli) mekan varsa
+    final hasOutdoorSpot = widget.dayPlan.places.any((spot) =>
+    spot.category.toLowerCase() == 'nature' || spot.category.toLowerCase() == 'history');
+
+    if (isBadWeather && hasOutdoorSpot) {
+      _alertShown = true;
+      // UI çizildikten hemen sonra uyarı dialogu göster
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _showAlternativeRouteDialog();
+      });
+    }
+  }
+
+  void _showAlternativeRouteDialog() {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          backgroundColor: const Color(0xFF1E293B),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Row(
+            children: [
+              Icon(Icons.warning_amber_rounded, color: Colors.orangeAccent, size: 28),
+              SizedBox(width: 8),
+              Text('Kötü Hava Uyarısı!', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '${widget.dayPlan.day}. Gün rotanda yağışlı/kötü hava bekleniyor (${_weather!.temperature.round()}°C).',
+                style: const TextStyle(color: Colors.white70, fontSize: 15),
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'Açık hava (Doğa/Tarih) mekanları yerine kapalı mekan alternatifleri (Müze/AVM) eklemek ister misin?',
+                style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text('Riski Alacağım', style: TextStyle(color: Colors.grey.shade400)),
+            ),
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.orangeAccent,
+                foregroundColor: Colors.black87,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              onPressed: () {
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Yapay zeka kapalı mekan alternatifleri arıyor... 🔍 (Çok yakında!)'),
+                    backgroundColor: Colors.orangeAccent,
+                  ),
+                );
+              },
+              icon: const Icon(Icons.auto_awesome),
+              label: const Text('Alternatif Üret', style: TextStyle(fontWeight: FontWeight.bold)),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   @override
@@ -835,24 +925,38 @@ class _DayWeatherBadgeState extends State<DayWeatherBadge> {
 
     if (_weather == null) return const SizedBox.shrink();
 
-    return Row(
-      children: [
-        Image.network(
-          'https://openweathermap.org/img/wn/${_weather!.iconCode}.png',
-          width: 32,
-          height: 32,
-          errorBuilder: (context, error, stackTrace) => const Icon(Icons.cloud, color: Colors.white, size: 20),
+    // Hava kötüyse rozetin rengini kızartalım
+    final String icon = _weather!.iconCode;
+    final bool isBadWeather = icon.startsWith('09') || icon.startsWith('10') || icon.startsWith('11') || icon.startsWith('13');
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: isBadWeather ? Colors.redAccent.withOpacity(0.2) : Colors.transparent,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isBadWeather ? Colors.redAccent.withOpacity(0.5) : Colors.transparent,
         ),
-        const SizedBox(width: 4),
-        Text(
-          '${_weather!.temperature.round()}°C',
-          style: const TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.w800,
-            fontSize: 16,
+      ),
+      child: Row(
+        children: [
+          Image.network(
+            'https://openweathermap.org/img/wn/$icon.png',
+            width: 32,
+            height: 32,
+            errorBuilder: (context, error, stackTrace) => const Icon(Icons.cloud, color: Colors.white, size: 20),
           ),
-        ),
-      ],
+          const SizedBox(width: 4),
+          Text(
+            '${_weather!.temperature.round()}°C',
+            style: TextStyle(
+              color: isBadWeather ? Colors.redAccent.shade100 : Colors.white,
+              fontWeight: FontWeight.w800,
+              fontSize: 16,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
