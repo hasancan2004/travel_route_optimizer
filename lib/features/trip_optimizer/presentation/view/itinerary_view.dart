@@ -598,112 +598,130 @@ class _ItineraryViewState extends State<ItineraryView> {
                                   ),
                                 );
                               },
-                              child: ListTile(
+                              child: Padding(
                                 key: ValueKey('list_tile_${spot.name}_$spotIndex'),
-                                contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-                                leading: ClipRRect(
-                                  borderRadius: BorderRadius.circular(12),
-                                  child: spot.imagePath != null
-                                      ? Image.file(
-                                    File(spot.imagePath!),
-                                    width: 55,
-                                    height: 55,
-                                    fit: BoxFit.cover,
-                                  )
-                                      : spot.imageUrl != null && spot.imageUrl!.isNotEmpty
-                                      ? Image.network(
-                                    spot.imageUrl!,
-                                    width: 55,
-                                    height: 55,
-                                    fit: BoxFit.cover,
-                                    loadingBuilder: (context, child, loadingProgress) {
-                                      if (loadingProgress == null) return child;
-                                      return Container(
-                                        width: 55,
-                                        height: 55,
-                                        color: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.2),
-                                        child: const Center(
-                                          child: SizedBox(
-                                            width: 20,
-                                            height: 20,
-                                            child: CircularProgressIndicator(strokeWidth: 2),
+                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.center,
+                                  children: [
+                                    // Leading - kategori ikonu veya resim
+                                    ClipRRect(
+                                      borderRadius: BorderRadius.circular(12),
+                                      child: spot.imagePath != null
+                                          ? Image.file(
+                                        File(spot.imagePath!),
+                                        width: 50,
+                                        height: 50,
+                                        fit: BoxFit.cover,
+                                      )
+                                          : spot.imageUrl != null && spot.imageUrl!.isNotEmpty
+                                          ? Image.network(
+                                        spot.imageUrl!,
+                                        width: 50,
+                                        height: 50,
+                                        fit: BoxFit.cover,
+                                        loadingBuilder: (context, child, loadingProgress) {
+                                          if (loadingProgress == null) return child;
+                                          return Container(
+                                            width: 50,
+                                            height: 50,
+                                            color: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.2),
+                                            child: const Center(
+                                              child: SizedBox(
+                                                width: 20,
+                                                height: 20,
+                                                child: CircularProgressIndicator(strokeWidth: 2),
+                                              ),
+                                            ),
+                                          );
+                                        },
+                                        errorBuilder: (context, error, stackTrace) => Container(
+                                          width: 50,
+                                          height: 50,
+                                          decoration: BoxDecoration(
+                                            color: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.4),
+                                          ),
+                                          child: Icon(
+                                            _getCategoryIcon(spot.category),
+                                            color: Theme.of(context).colorScheme.primary,
+                                            size: 24,
                                           ),
                                         ),
-                                      );
-                                    },
-                                    errorBuilder: (context, error, stackTrace) => Container(
-                                      width: 55,
-                                      height: 55,
-                                      decoration: BoxDecoration(
-                                        color: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.4),
-                                      ),
-                                      child: Icon(
-                                        _getCategoryIcon(spot.category),
-                                        color: Theme.of(context).colorScheme.primary,
-                                        size: 24,
-                                      ),
-                                    ),
-                                  )
-                                      : Container(
-                                    width: 55,
-                                    height: 55,
-                                    decoration: BoxDecoration(
-                                      color: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.4),
-                                    ),
-                                    child: Icon(
-                                      _getCategoryIcon(spot.category),
-                                      color: Theme.of(context).colorScheme.primary,
-                                      size: 24,
-                                    ),
-                                  ),
-                                ),
-                                title: Text(
-                                  '${spotIndex + 1}. ${spot.name}',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w800,
-                                    fontSize: 16,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                                subtitle: Padding(
-                                  padding: const EdgeInsets.only(top: 6.0),
-                                  child: Row(
-                                    children: [
-                                      Text(
-                                        spot.category.toUpperCase(),
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w700,
-                                          color: Colors.grey.shade400,
+                                      )
+                                          : Container(
+                                        width: 50,
+                                        height: 50,
+                                        decoration: BoxDecoration(
+                                          color: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.4),
+                                        ),
+                                        child: Icon(
+                                          _getCategoryIcon(spot.category),
+                                          color: Theme.of(context).colorScheme.primary,
+                                          size: 24,
                                         ),
                                       ),
-                                      const SizedBox(width: 8),
-                                      const Icon(Icons.star_rounded, color: Colors.amber, size: 16),
-                                      const SizedBox(width: 2),
-                                      Text(
-                                        spot.rating.toString(),
-                                        style: const TextStyle(
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.bold,
-                                          color: Colors.white70,
-                                        ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    // Ortadaki mekan bilgisi - Expanded ile esnek genişlik
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Text(
+                                            '${spotIndex + 1}. ${spot.name}',
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w800,
+                                              fontSize: 15,
+                                              color: Colors.white,
+                                            ),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Flexible(
+                                                child: Text(
+                                                  spot.category.toUpperCase(),
+                                                  style: TextStyle(
+                                                    fontSize: 11,
+                                                    fontWeight: FontWeight.w700,
+                                                    color: Colors.grey.shade400,
+                                                  ),
+                                                  maxLines: 1,
+                                                  overflow: TextOverflow.ellipsis,
+                                                ),
+                                              ),
+                                              const SizedBox(width: 6),
+                                              const Icon(Icons.star_rounded, color: Colors.amber, size: 14),
+                                              const SizedBox(width: 2),
+                                              Text(
+                                                spot.rating.toString(),
+                                                style: const TextStyle(
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.bold,
+                                                  color: Colors.white70,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ],
                                       ),
-                                    ],
-                                  ),
-                                ),
-                                trailing: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
+                                    ),
+                                    const SizedBox(width: 8),
+                                    // Trailing - yol tarifi, fiyat, sıralama
                                     IconButton(
                                       padding: EdgeInsets.zero,
                                       constraints: const BoxConstraints(),
-                                      icon: const Icon(Icons.directions, color: Colors.blueAccent, size: 26),
+                                      icon: const Icon(Icons.directions, color: Colors.blueAccent, size: 24),
                                       tooltip: 'Yol Tarifi Al',
                                       onPressed: () => _launchMaps(spot.lat, spot.lng, spot.name),
                                     ),
-                                    const SizedBox(width: 12),
+                                    const SizedBox(width: 8),
                                     Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
                                       decoration: BoxDecoration(
                                         color: spot.entryFee > 0 ? Colors.white.withOpacity(0.05) : Colors.greenAccent.withOpacity(0.1),
                                         borderRadius: BorderRadius.circular(8),
@@ -715,13 +733,13 @@ class _ItineraryViewState extends State<ItineraryView> {
                                         spot.entryFee > 0 ? '${spot.entryFee} ₺' : 'Ücretsiz',
                                         style: TextStyle(
                                           fontWeight: FontWeight.w800,
-                                          fontSize: 13,
+                                          fontSize: 12,
                                           color: spot.entryFee > 0 ? Colors.white : Colors.greenAccent,
                                         ),
                                       ),
                                     ),
-                                    const SizedBox(width: 8),
-                                    const Icon(Icons.drag_handle, color: Colors.grey),
+                                    const SizedBox(width: 6),
+                                    const Icon(Icons.drag_handle, color: Colors.grey, size: 20),
                                   ],
                                 ),
                               ),
@@ -986,10 +1004,48 @@ class _AddSpotFullScreenState extends State<_AddSpotFullScreen> {
                       child: _selectedImagePath != null
                           ? ClipRRect(
                         borderRadius: BorderRadius.circular(14),
-                        child: Image.file(
-                          File(_selectedImagePath!),
-                          fit: BoxFit.cover,
-                          width: double.infinity,
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            Image.file(
+                              File(_selectedImagePath!),
+                              fit: BoxFit.cover,
+                              width: double.infinity,
+                            ),
+                            Positioned(
+                              top: 8,
+                              right: 8,
+                              child: Container(
+                                padding: const EdgeInsets.all(6),
+                                decoration: const BoxDecoration(
+                                  color: Colors.black54,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(Icons.edit, color: Colors.white, size: 18),
+                              ),
+                            ),
+                            Positioned(
+                              bottom: 8,
+                              left: 8,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                decoration: BoxDecoration(
+                                  color: Colors.black54,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: const Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.check_circle, color: Colors.greenAccent, size: 16),
+                                    SizedBox(width: 4),
+                                    Text('Harita İkonu Olarak Kullanılacak',
+                                      style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       )
                           : Column(
@@ -1005,12 +1061,12 @@ class _AddSpotFullScreenState extends State<_AddSpotFullScreen> {
                           ),
                           const SizedBox(height: 12),
                           const Text(
-                            'Kapak Fotoğrafı Ekle',
+                            'Harita İçin Kapak Fotoğrafı Ekle',
                             style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            'Galeriden seçmek için dokunun',
+                            'Pin yerine senin fotoğrafın görünecek 📸',
                             style: TextStyle(color: Colors.grey.shade400, fontSize: 12),
                           ),
                         ],

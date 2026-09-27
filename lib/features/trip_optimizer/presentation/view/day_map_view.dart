@@ -1,13 +1,18 @@
+import 'dart:io';
+import 'dart:typed_data';
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter_polyline_points/flutter_polyline_points.dart';
-import 'package:dio/dio.dart'; // YENİ: Radar API isteği için eklendi
+import 'package:dio/dio.dart';
+import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 
 import '../../domain/entities/itinerary_day_entity.dart';
 import '../../domain/entities/spot_entity.dart';
-import '../../data/datasources/trip_remote_data_source.dart'; // YENİ: Veri kaynağımız
+import '../../data/datasources/trip_remote_data_source.dart';
 
 class DayMapView extends StatefulWidget {
   final ItineraryDayEntity dayPlan;
@@ -19,7 +24,6 @@ class DayMapView extends StatefulWidget {
 }
 
 class _DayMapViewState extends State<DayMapView> {
-  // YENİ: Radar değişkenleri
   final Set<Circle> _circles = {};
   bool _isRadarScanning = false;
 
@@ -44,8 +48,112 @@ class _DayMapViewState extends State<DayMapView> {
     await _getPolylines();
   }
 
-  void _setMarkers() {
+  // YENİ: Harita yüklendiğinde tüm mekanları kapsayacak şekilde sınırları (bounds) ayarlayan fonksiyon
+  void _fitMarkersToBounds() {
+    if (widget.dayPlan.places.isEmpty || _mapController == null) return;
+
+    double? minLat;
+    double? maxLat;
+    double? minLng;
+    double? maxLng;
+
+    for (final spot in widget.dayPlan.places) {
+      if (minLat == null || spot.lat < minLat) minLat = spot.lat;
+      if (maxLat == null || spot.lat > maxLat) maxLat = spot.lat;
+      if (minLng == null || spot.lng < minLng) minLng = spot.lng;
+      if (maxLng == null || spot.lng > maxLng) maxLng = spot.lng;
+    }
+
+    if (minLat != null && maxLat != null && minLng != null && maxLng != null) {
+      final bounds = LatLngBounds(
+        southwest: LatLng(minLat, minLng),
+        northeast: LatLng(maxLat, maxLng),
+      );
+
+      // Haritayı bu sınırlara animasyonla sığdır, etrafında 50 piksel boşluk bırak
+      _mapController!.animateCamera(CameraUpdate.newLatLngBounds(bounds, 50.0));
+    }
+  }
+
+  /// Resim byte'larından yuvarlak çerçeveli harita ikonu oluşturur
+  Future<BitmapDescriptor> _createCircularMarkerFromBytes(Uint8List imageBytes, String category) async {
+    try {
+      final ui.Codec codec = await ui.instantiateImageCodec(imageBytes, targetWidth: 120, targetHeight: 120);
+      final ui.FrameInfo frameInfo = await codec.getNextFrame();
+
+      final ui.PictureRecorder pictureRecorder = ui.PictureRecorder();
+      final Canvas canvas = Canvas(pictureRecorder);
+      final Paint paint = Paint()..isAntiAlias = true;
+      const double size = 130;
+      const double radius = size / 2;
+      const double borderWidth = 4;
+
+      // Beyaz dış çerçeve
+      canvas.drawCircle(
+        const Offset(radius, radius),
+        radius,
+        Paint()..color = Colors.white,
+      );
+
+      // İç daireye fotoğrafı kırp
+      final clipPath = Path()
+        ..addOval(Rect.fromCircle(
+          center: const Offset(radius, radius),
+          radius: radius - borderWidth,
+        ));
+      canvas.clipPath(clipPath);
+
+      // Fotoğrafı ortala
+      final srcRect = Rect.fromLTWH(
+        0, 0,
+        frameInfo.image.width.toDouble(),
+        frameInfo.image.height.toDouble(),
+      );
+      final dstRect = Rect.fromLTWH(
+        borderWidth, borderWidth,
+        size - borderWidth * 2, size - borderWidth * 2,
+      );
+      canvas.drawImageRect(frameInfo.image, srcRect, dstRect, paint);
+
+      final ui.Image roundedImage = await pictureRecorder.endRecording().toImage(size.toInt(), size.toInt());
+      final ByteData? byteData = await roundedImage.toByteData(format: ui.ImageByteFormat.png);
+      final Uint8List resizedBytes = byteData!.buffer.asUint8List();
+
+      return BitmapDescriptor.fromBytes(resizedBytes);
+    } catch (e) {
+      return BitmapDescriptor.defaultMarkerWithHue(_getCategoryColor(category));
+    }
+  }
+
+  /// Yerel dosyadan (imagePath) marker ikonu oluşturur
+  Future<BitmapDescriptor> _getMarkerIconFromFile(String filePath, String category) async {
+    try {
+      final file = File(filePath);
+      if (!await file.exists()) {
+        return BitmapDescriptor.defaultMarkerWithHue(_getCategoryColor(category));
+      }
+      final Uint8List imageBytes = await file.readAsBytes();
+      return _createCircularMarkerFromBytes(imageBytes, category);
+    } catch (e) {
+      return BitmapDescriptor.defaultMarkerWithHue(_getCategoryColor(category));
+    }
+  }
+
+  /// URL'den marker ikonu oluşturur (cache'li)
+  Future<BitmapDescriptor> _getMarkerIconFromUrl(String imageUrl, String category) async {
+    try {
+      final file = await DefaultCacheManager().getSingleFile(imageUrl);
+      final Uint8List imageBytes = await file.readAsBytes();
+      return _createCircularMarkerFromBytes(imageBytes, category);
+    } catch (e) {
+      return BitmapDescriptor.defaultMarkerWithHue(_getCategoryColor(category));
+    }
+  }
+
+  void _setMarkers() async {
     _markers.clear();
+
+    // Önce varsayılan ikonlarla hızlıca göster
     for (int i = 0; i < widget.dayPlan.places.length; i++) {
       final spot = widget.dayPlan.places[i];
       _markers.add(
@@ -62,6 +170,39 @@ class _DayMapViewState extends State<DayMapView> {
       );
     }
     setState(() {});
+
+    // Sonra fotoğraflı olanları özel ikonla güncelle
+    // Öncelik: imagePath (yerel galeri) > imageUrl (uzak sunucu)
+    for (int i = 0; i < widget.dayPlan.places.length; i++) {
+      final spot = widget.dayPlan.places[i];
+      BitmapDescriptor? customIcon;
+
+      if (spot.imagePath != null && spot.imagePath!.isNotEmpty) {
+        // Galeriden seçilmiş yerel fotoğraf
+        customIcon = await _getMarkerIconFromFile(spot.imagePath!, spot.category);
+      } else if (spot.imageUrl != null && spot.imageUrl!.isNotEmpty) {
+        // API'den gelen uzak fotoğraf
+        customIcon = await _getMarkerIconFromUrl(spot.imageUrl!, spot.category);
+      }
+
+      if (customIcon != null) {
+        setState(() {
+          _markers.removeWhere((m) => m.markerId == MarkerId('spot_${spot.name}_$i'));
+          _markers.add(
+            Marker(
+              markerId: MarkerId('spot_${spot.name}_$i'),
+              position: LatLng(spot.lat, spot.lng),
+              infoWindow: InfoWindow(
+                title: '${i + 1}. ${spot.name}',
+                snippet: spot.category.toUpperCase(),
+              ),
+              icon: customIcon!,
+              onTap: () => _showSpotDetails(context, spot, i + 1),
+            ),
+          );
+        });
+      }
+    }
   }
 
   Future<void> _getPolylines() async {
@@ -184,7 +325,6 @@ class _DayMapViewState extends State<DayMapView> {
     }
   }
 
-  // YENİ: Radar Motoru
   Future<void> _runLiveRadar() async {
     if (_currentLocation == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -199,7 +339,7 @@ class _DayMapViewState extends State<DayMapView> {
         Circle(
           circleId: const CircleId('radar_pulse'),
           center: _currentLocation!,
-          radius: 1500, // 1.5 KM Yarıçap
+          radius: 1500,
           fillColor: Colors.tealAccent.withOpacity(0.2),
           strokeColor: Colors.tealAccent,
           strokeWidth: 2,
@@ -247,11 +387,12 @@ class _DayMapViewState extends State<DayMapView> {
     final nameController = TextEditingController();
     final feeController = TextEditingController();
     String selectedCategory = 'history';
+    String? selectedImagePath;
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: Colors.white,
+      backgroundColor: const Color(0xFF1E293B),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
@@ -260,37 +401,173 @@ class _DayMapViewState extends State<DayMapView> {
           builder: (context, setModalState) {
             return Padding(
               padding: EdgeInsets.only(
-                bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+                bottom: MediaQuery.of(context).viewInsets.bottom,
                 left: 24,
                 right: 24,
                 top: 24,
               ),
-              child: Column(
+              child: SingleChildScrollView(
+                child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  // Drag handle
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 5,
+                      margin: const EdgeInsets.only(bottom: 16),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade600,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                  ),
                   const Text(
                     'Seçilen Konuma Mekan Ekle 📍',
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.black87),
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white),
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 20),
-                  TextField(
-                    controller: nameController,
-                    textCapitalization: TextCapitalization.words,
-                    decoration: const InputDecoration(
-                      labelText: 'Mekan Adı',
-                      border: OutlineInputBorder(),
-                      prefixIcon: Icon(Icons.place_outlined),
+
+                  // Fotoğraf Ekleme Alanı
+                  GestureDetector(
+                    onTap: () async {
+                      try {
+                        final picker = ImagePicker();
+                        final pickedFile = await picker.pickImage(source: ImageSource.gallery);
+                        if (pickedFile != null) {
+                          setModalState(() {
+                            selectedImagePath = pickedFile.path;
+                          });
+                        }
+                      } catch (e) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Fotoğraf seçilemedi: $e'), backgroundColor: Colors.redAccent),
+                          );
+                        }
+                      }
+                    },
+                    child: Container(
+                      height: 120,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF0F172A),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: selectedImagePath != null
+                              ? Colors.greenAccent.withValues(alpha: 0.5)
+                              : Colors.blueAccent.withValues(alpha: 0.3),
+                          width: 2,
+                        ),
+                      ),
+                      child: selectedImagePath != null
+                          ? ClipRRect(
+                              borderRadius: BorderRadius.circular(14),
+                              child: Stack(
+                                fit: StackFit.expand,
+                                children: [
+                                  Image.file(
+                                    File(selectedImagePath!),
+                                    fit: BoxFit.cover,
+                                  ),
+                                  Positioned(
+                                    top: 8,
+                                    right: 8,
+                                    child: Container(
+                                      padding: const EdgeInsets.all(4),
+                                      decoration: const BoxDecoration(
+                                        color: Colors.black54,
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: const Icon(Icons.edit, color: Colors.white, size: 16),
+                                    ),
+                                  ),
+                                  Positioned(
+                                    bottom: 8,
+                                    left: 8,
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: Colors.black54,
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: const Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(Icons.check_circle, color: Colors.greenAccent, size: 14),
+                                          SizedBox(width: 4),
+                                          Text('Harita İkonu Olarak Kullanılacak',
+                                            style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            )
+                          : Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(10),
+                                  decoration: BoxDecoration(
+                                    color: Colors.blueAccent.withValues(alpha: 0.2),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: const Icon(Icons.add_a_photo_rounded, size: 24, color: Colors.blueAccent),
+                                ),
+                                const SizedBox(height: 8),
+                                const Text(
+                                  'Harita İçin Kapak Fotoğrafı Ekle',
+                                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  'Pin yerine fotoğrafın görünecek',
+                                  style: TextStyle(color: Colors.grey.shade500, fontSize: 11),
+                                ),
+                              ],
+                            ),
                     ),
                   ),
                   const SizedBox(height: 16),
+
+                  // Mekan Adı
+                  TextField(
+                    controller: nameController,
+                    textCapitalization: TextCapitalization.words,
+                    style: const TextStyle(color: Colors.white),
+                    decoration: InputDecoration(
+                      labelText: 'Mekan Adı',
+                      labelStyle: TextStyle(color: Colors.grey.shade400),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide.none,
+                      ),
+                      prefixIcon: const Icon(Icons.place_outlined, color: Colors.blueAccent),
+                      filled: true,
+                      fillColor: const Color(0xFF0F172A),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+
+                  // Kategori
                   DropdownButtonFormField<String>(
                     value: selectedCategory,
-                    decoration: const InputDecoration(
+                    dropdownColor: const Color(0xFF1E293B),
+                    style: const TextStyle(color: Colors.white, fontSize: 16),
+                    decoration: InputDecoration(
                       labelText: 'Kategori',
-                      border: OutlineInputBorder(),
-                      prefixIcon: Icon(Icons.category_outlined),
+                      labelStyle: TextStyle(color: Colors.grey.shade400),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide.none,
+                      ),
+                      prefixIcon: const Icon(Icons.category_outlined, color: Colors.blueAccent),
+                      filled: true,
+                      fillColor: const Color(0xFF0F172A),
                     ),
                     items: const [
                       DropdownMenuItem(value: 'history', child: Text('Tarih 🏛️')),
@@ -304,29 +581,42 @@ class _DayMapViewState extends State<DayMapView> {
                       });
                     },
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 12),
+
+                  // Ücret
                   TextField(
                     controller: feeController,
                     keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
+                    style: const TextStyle(color: Colors.white),
+                    decoration: InputDecoration(
                       labelText: 'Tahmini Ücret (TL)',
-                      border: OutlineInputBorder(),
-                      prefixIcon: Icon(Icons.account_balance_wallet_outlined),
+                      labelStyle: TextStyle(color: Colors.grey.shade400),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide.none,
+                      ),
+                      prefixIcon: const Icon(Icons.account_balance_wallet_outlined, color: Colors.blueAccent),
+                      filled: true,
+                      fillColor: const Color(0xFF0F172A),
                     ),
                   ),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 20),
+
+                  // Rotaya Ekle Butonu
                   ElevatedButton(
                     style: ElevatedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 16),
                       backgroundColor: Colors.blueAccent,
+                      foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
+                        borderRadius: BorderRadius.circular(16),
                       ),
+                      elevation: 0,
                     ),
                     onPressed: () {
                       if (nameController.text.trim().isEmpty) {
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Lütfen mekan adını girin.')),
+                          const SnackBar(content: Text('Lütfen mekan adını girin.'), backgroundColor: Colors.redAccent),
                         );
                         return;
                       }
@@ -338,6 +628,7 @@ class _DayMapViewState extends State<DayMapView> {
                         entryFee: double.tryParse(feeController.text) ?? 0.0,
                         lat: tappedLatLng.latitude,
                         lng: tappedLatLng.longitude,
+                        imagePath: selectedImagePath,
                       );
 
                       setState(() {
@@ -358,10 +649,12 @@ class _DayMapViewState extends State<DayMapView> {
                     },
                     child: const Text(
                       'Rotaya Ekle',
-                      style: TextStyle(fontSize: 16, color: Colors.white, fontWeight: FontWeight.bold),
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                     ),
                   ),
+                  const SizedBox(height: 20),
                 ],
+              ),
               ),
             );
           },
@@ -421,6 +714,10 @@ class _DayMapViewState extends State<DayMapView> {
                   ),
                   onMapCreated: (GoogleMapController controller) {
                     _mapController = controller;
+                    // YENİ: Harita yüklendiği an zoom hesaplamasını çalıştırıyoruz
+                    Future.delayed(const Duration(milliseconds: 500), () {
+                      _fitMarkersToBounds();
+                    });
                   },
                   onTap: (LatLng tappedLatLng) {
                     setState(() {
@@ -436,7 +733,7 @@ class _DayMapViewState extends State<DayMapView> {
                   },
                   markers: currentMarkers,
                   polylines: currentPolylines,
-                  circles: _circles, // YENİ: Radar çemberi haritaya bağlandı
+                  circles: _circles,
                   myLocationEnabled: _locationPermissionGranted,
                   myLocationButtonEnabled: false,
                   zoomControlsEnabled: false,
@@ -449,7 +746,6 @@ class _DayMapViewState extends State<DayMapView> {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      // YENİ: Radar Butonu
                       FloatingActionButton(
                         heroTag: 'btnRadar',
                         backgroundColor: Colors.tealAccent.shade700,
