@@ -11,6 +11,8 @@ class RegisterView extends StatefulWidget {
 }
 
 class _RegisterViewState extends State<RegisterView> {
+  final _nameController = TextEditingController();
+  final _phoneController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
@@ -18,10 +20,19 @@ class _RegisterViewState extends State<RegisterView> {
   bool _isPasswordVisible = false;
   bool _isConfirmPasswordVisible = false;
 
-  // Koyu Tema Renk Paleti (Uygulamanın kalanıyla birebir uyumlu)
   final Color darkBg = const Color(0xFF0F172A);
   final Color cardBg = const Color(0xFF1E293B);
   final Color inputBg = const Color(0xFF0F172A);
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _phoneController.dispose();
+    _emailController.dispose();
+    _passwordController.dispose();
+    _confirmPasswordController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -33,15 +44,7 @@ class _RegisterViewState extends State<RegisterView> {
         foregroundColor: Colors.white,
       ),
       body: BlocConsumer<AuthCubit, AuthState>(
-        listener: (context, state) {
-          // DİKKAT: Artık kayıt olunca direkt ana ekrana atmıyoruz!
-          // Supabase kayıt olduktan sonra kullanıcıya onay maili gönderir.
-          // Bu yüzden kullanıcıyı Login ekranına geri (pop) gönderip bilgilendiriyoruz.
-          if (state is Unauthenticated) {
-            // Eğer state Unauthenticated olduysa ve kayıt işleminden geldiysek
-            // (veya genel bir çıkış/kayıt durumu) kullanıcıyı bilgilendirip login'e atabiliriz.
-          }
-        },
+        listener: (context, state) {},
         builder: (context, state) {
           if (state is AuthLoading) {
             return const Center(child: CircularProgressIndicator(color: Colors.blueAccent));
@@ -54,7 +57,6 @@ class _RegisterViewState extends State<RegisterView> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // Başlık Alanı
                   const Icon(Icons.person_add_alt_1, size: 70, color: Colors.blueAccent),
                   const SizedBox(height: 16),
                   const Text(
@@ -70,7 +72,6 @@ class _RegisterViewState extends State<RegisterView> {
                   ),
                   const SizedBox(height: 36),
 
-                  // Kayıt Form Kartı
                   Container(
                     padding: const EdgeInsets.all(20),
                     decoration: BoxDecoration(
@@ -81,6 +82,38 @@ class _RegisterViewState extends State<RegisterView> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
+                        // Ad Soyad TextField
+                        TextField(
+                          controller: _nameController,
+                          textCapitalization: TextCapitalization.words,
+                          style: const TextStyle(color: Colors.white),
+                          decoration: InputDecoration(
+                            labelText: 'Ad Soyad',
+                            labelStyle: TextStyle(color: Colors.grey.shade400),
+                            prefixIcon: const Icon(Icons.badge, color: Colors.blueAccent),
+                            filled: true,
+                            fillColor: inputBg,
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+
+                        // Telefon Numarası TextField
+                        TextField(
+                          controller: _phoneController,
+                          keyboardType: TextInputType.phone,
+                          style: const TextStyle(color: Colors.white),
+                          decoration: InputDecoration(
+                            labelText: 'Telefon Numarası',
+                            labelStyle: TextStyle(color: Colors.grey.shade400),
+                            prefixIcon: const Icon(Icons.phone, color: Colors.blueAccent),
+                            filled: true,
+                            fillColor: inputBg,
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+
                         // E-posta TextField
                         TextField(
                           controller: _emailController,
@@ -107,10 +140,7 @@ class _RegisterViewState extends State<RegisterView> {
                             labelStyle: TextStyle(color: Colors.grey.shade400),
                             prefixIcon: const Icon(Icons.lock, color: Colors.blueAccent),
                             suffixIcon: IconButton(
-                              icon: Icon(
-                                _isPasswordVisible ? Icons.visibility : Icons.visibility_off,
-                                color: Colors.grey,
-                              ),
+                              icon: Icon(_isPasswordVisible ? Icons.visibility : Icons.visibility_off, color: Colors.grey),
                               onPressed: () => setState(() => _isPasswordVisible = !_isPasswordVisible),
                             ),
                             filled: true,
@@ -130,10 +160,7 @@ class _RegisterViewState extends State<RegisterView> {
                             labelStyle: TextStyle(color: Colors.grey.shade400),
                             prefixIcon: const Icon(Icons.lock_outline, color: Colors.blueAccent),
                             suffixIcon: IconButton(
-                              icon: Icon(
-                                _isConfirmPasswordVisible ? Icons.visibility : Icons.visibility_off,
-                                color: Colors.grey,
-                              ),
+                              icon: Icon(_isConfirmPasswordVisible ? Icons.visibility : Icons.visibility_off, color: Colors.grey),
                               onPressed: () => setState(() => _isConfirmPasswordVisible = !_isConfirmPasswordVisible),
                             ),
                             filled: true,
@@ -151,11 +178,13 @@ class _RegisterViewState extends State<RegisterView> {
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                           ),
                           onPressed: () async {
+                            final name = _nameController.text.trim();
+                            final phone = _phoneController.text.trim();
                             final email = _emailController.text.trim();
                             final password = _passwordController.text.trim();
                             final confirmPassword = _confirmPasswordController.text.trim();
 
-                            if (email.isEmpty || password.isEmpty) {
+                            if (name.isEmpty || phone.isEmpty || email.isEmpty || password.isEmpty) {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 const SnackBar(content: Text('Lütfen tüm alanları doldurun'), backgroundColor: Colors.orangeAccent),
                               );
@@ -169,19 +198,16 @@ class _RegisterViewState extends State<RegisterView> {
                               return;
                             }
 
-                            // 1. Cubit üzerinden kayıt sürecini tetikle
-                            await context.read<AuthCubit>().signUp(email, password);
+                            await context.read<AuthCubit>().signUp(email, password, name, phone);
 
-                            // Eğer işlem sırasında hata fırlatılmadıysa kullanıcıya bilgi ver ve Login'e dön
                             if (context.mounted) {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 const SnackBar(
-                                  content: Text('Kayıt başarılı! Lütfen e-postanızı onaylayıp giriş yapın.'),
+                                  content: Text('Kayıt başarılı! Lütfen giriş yapın.'),
                                   backgroundColor: Colors.green,
                                   duration: Duration(seconds: 4),
                                 ),
                               );
-                              // 2. Login ekranına geri dön
                               Navigator.pop(context);
                             }
                           },
@@ -192,7 +218,6 @@ class _RegisterViewState extends State<RegisterView> {
                   ),
                   const SizedBox(height: 24),
 
-                  // Giriş Ekranına Dönüş
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [

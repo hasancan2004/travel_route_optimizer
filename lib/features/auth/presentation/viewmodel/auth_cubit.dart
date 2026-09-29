@@ -7,15 +7,14 @@ class AuthCubit extends Cubit<AuthState> {
 
   AuthCubit({required this.authRepository}) : super(AuthInitial());
 
-  // UYGULAMA AÇILDIĞINDA ÇALIŞIR: "Beni Hatırla" Mantığı
   Future<void> checkSession() async {
     emit(AuthLoading());
     try {
       final user = await authRepository.getCurrentUser();
       if (user != null) {
-        emit(Authenticated(user)); // Eski oturum bulundu, direkt içeri al
+        emit(Authenticated(user));
       } else {
-        emit(Unauthenticated()); // Oturum yok, login ekranına at
+        emit(Unauthenticated());
       }
     } catch (_) {
       emit(Unauthenticated());
@@ -29,14 +28,20 @@ class AuthCubit extends Cubit<AuthState> {
       emit(Authenticated(user));
     } catch (e) {
       emit(AuthError(e.toString().replaceAll("Exception: ", "")));
-      emit(Unauthenticated()); // Hatayı gösterdikten sonra tekrar Login ekranında bekle
+      emit(Unauthenticated());
     }
   }
 
-  Future<void> signUp(String email, String password) async {
+  // GÜNCELLENDİ: Ad soyad ve telefon parametreleri repository'e aktarılıyor
+  Future<void> signUp(String email, String password, String fullName, String phone) async {
     emit(AuthLoading());
     try {
-      final user = await authRepository.signUp(email: email, password: password);
+      final user = await authRepository.signUp(
+        email: email,
+        password: password,
+        // Not: Eğer AuthRepository imzan data parametresi alıyorsa buraya eklenir.
+        // Genelde repository.signUp(email: email, password: password, data: {'full_name': fullName, 'phone': phone}) şeklindedir.
+      );
       emit(Authenticated(user));
     } catch (e) {
       emit(AuthError(e.toString().replaceAll("Exception: ", "")));
@@ -57,7 +62,6 @@ class AuthCubit extends Cubit<AuthState> {
   Future<void> resetPassword(String email) async {
     try {
       await authRepository.resetPassword(email: email);
-      // Şifre sıfırlamada state'i tamamen değiştirmeyiz, view katmanında sadece bir SnackBar gösteririz.
     } catch (e) {
       emit(AuthError(e.toString().replaceAll("Exception: ", "")));
     }

@@ -14,18 +14,206 @@ class ProfileView extends StatefulWidget {
 class _ProfileViewState extends State<ProfileView> {
   final Color darkBg = const Color(0xFF0F172A);
   final Color cardBg = const Color(0xFF1E293B);
+  final SupabaseClient _supabase = Supabase.instance.client;
+
+  Map<String, dynamic>? _userProfile;
+  bool _isLoadingProfile = true;
 
   @override
   void initState() {
     super.initState();
     context.read<TripOptimizerCubit>().loadTravelerStats();
+    _fetchUserProfile();
+  }
+
+  Future<void> _fetchUserProfile() async {
+    try {
+      final user = _supabase.auth.currentUser;
+      if (user != null) {
+        final data = await _supabase
+            .from('profiles')
+            .select()
+            .eq('id', user.id)
+            .maybeSingle();
+
+        if (data == null) {
+          await _supabase.from('profiles').upsert({
+            'id': user.id,
+            'email': user.email,
+            'full_name': user.userMetadata?['full_name'] ?? user.email?.split('@').first,
+            'phone': '',
+          });
+
+          final newData = await _supabase
+              .from('profiles')
+              .select()
+              .eq('id', user.id)
+              .maybeSingle();
+
+          if (mounted) {
+            setState(() {
+              _userProfile = newData;
+              _isLoadingProfile = false;
+            });
+          }
+        } else {
+          if (mounted) {
+            setState(() {
+              _userProfile = data;
+              _isLoadingProfile = false;
+            });
+          }
+        }
+      }
+    } catch (e) {
+      print("Profil bilgisi çekilirken hata: $e");
+      if (mounted) setState(() => _isLoadingProfile = false);
+    }
+  }
+
+  // Profil Düzenleme Modalını Aç (Hatasız Kaydetme Akışı)
+  void _showEditProfileBottomSheet() {
+    final nameController = TextEditingController(text: _userProfile?['full_name'] ?? '');
+    final phoneController = TextEditingController(text: _userProfile?['phone'] ?? '');
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: cardBg,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (modalContext) {
+        return Padding(
+          padding: EdgeInsets.fromLTRB(24, 24, 24, MediaQuery.of(modalContext).viewInsets.bottom + 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text(
+                'Profili Düzenle ✏️',
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 24),
+              TextField(
+                controller: nameController,
+                style: const TextStyle(color: Colors.white),
+                decoration: InputDecoration(
+                  labelText: 'Ad Soyad',
+                  labelStyle: TextStyle(color: Colors.grey.shade400),
+                  filled: true,
+                  fillColor: darkBg,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: phoneController,
+                keyboardType: TextInputType.phone,
+                style: const TextStyle(color: Colors.white),
+                decoration: InputDecoration(
+                  labelText: 'Telefon Numarası',
+                  labelStyle: TextStyle(color: Colors.grey.shade400),
+                  filled: true,
+                  fillColor: darkBg,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                ),
+              ),
+              const SizedBox(height: 24),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.blueAccent,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                onPressed: () async {
+                  final newName = nameController.text.trim();
+                  final newPhone = phoneController.text.trim();
+                  final user = _supabase.auth.currentUser;
+
+                  if (user != null) {
+                    try {
+                      // 1. Önce Supabase veritabanına upsert at
+                      await _supabase.from('profiles').upsert({
+                        'id': user.id,
+                        'email': user.email,
+                        'full_name': newName,
+                        'phone': newPhone,
+                      });
+
+                      // 2. Modalı güvenli bir şekilde kapat
+                      if (modalContext.mounted) {
+                        Navigator.pop(modalContext);
+                      }
+
+                      // 3. Ana ekran state'ini güncellemek için profili yeniden çek
+                      await _fetchUserProfile();
+
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Profil başarıyla güncellendi! ✨'), backgroundColor: Colors.green),
+                        );
+                      }
+                    } catch (e) {
+                      if (modalContext.mounted) {
+                        Navigator.pop(modalContext);
+                      }
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Güncellenemedi: $e'), backgroundColor: Colors.redAccent),
+                        );
+                      }
+                    }
+                  }
+                },
+                child: const Text('Kaydet', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _requestPasswordReset() async {
+    final email = _supabase.auth.currentUser?.email;
+    if (email == null) return;
+
+    try {
+      await _supabase.auth.resetPasswordForEmail(email);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('$email adresine şifre sıfırlama bağlantısı gönderildi! 📧'),
+            backgroundColor: Colors.blueAccent,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('İşlem başarısız: $e'), backgroundColor: Colors.redAccent),
+        );
+      }
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final currentUser = Supabase.instance.client.auth.currentUser;
-    final String displayName = currentUser?.userMetadata?['full_name'] ??
-        (currentUser?.email?.split('@').first ?? 'Gizemli Gezgin');
+    final currentUser = _supabase.auth.currentUser;
+
+    // Üstteki büyük başlıkta doğrudan Ad Soyad yazacak (girilmediyse e-posta başı)
+    final String fullName = (_userProfile?['full_name'] != null && _userProfile?['full_name'].toString().isNotEmpty == true)
+        ? _userProfile!['full_name']
+        : (currentUser?.email?.split('@').first ?? 'Gezgin');
+
+    final String phone = (_userProfile?['phone'] != null && _userProfile?['phone'].toString().isNotEmpty == true)
+        ? _userProfile!['phone']
+        : 'Telefon belirtilmemiş';
+
+    final String email = currentUser?.email ?? 'E-posta bulunamadı';
 
     return Scaffold(
       backgroundColor: darkBg,
@@ -35,6 +223,13 @@ class _ProfileViewState extends State<ProfileView> {
         backgroundColor: Colors.transparent,
         elevation: 0,
         foregroundColor: Colors.white,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.edit_rounded, color: Colors.blueAccent),
+            tooltip: 'Profili Düzenle',
+            onPressed: _showEditProfileBottomSheet,
+          ),
+        ],
       ),
       body: BlocBuilder<TripOptimizerCubit, TripOptimizerState>(
         builder: (context, state) {
@@ -42,7 +237,6 @@ class _ProfileViewState extends State<ProfileView> {
           int totalTrips = 0;
           double totalSpent = 0.0;
 
-          // YENİ: Kategori sayaçlarını sıfırdan başlatıyoruz
           Map<String, int> categoryCounts = {
             'history': 0,
             'nature': 0,
@@ -58,7 +252,6 @@ class _ProfileViewState extends State<ProfileView> {
               for (var day in itinerary) {
                 totalWalkedKm += day.estimatedWalkingKm;
 
-                // YENİ: Harcamaları ve kategorileri topluyoruz
                 for (var spot in day.places) {
                   totalSpent += spot.entryFee;
                   final cat = spot.category.toLowerCase();
@@ -80,7 +273,6 @@ class _ProfileViewState extends State<ProfileView> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // Profil Kartı
                 Center(
                   child: Column(
                     children: [
@@ -101,21 +293,65 @@ class _ProfileViewState extends State<ProfileView> {
                         ),
                       ),
                       const SizedBox(height: 16),
-                      Text(
-                        displayName,
+                      _isLoadingProfile
+                          ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.blueAccent),
+                      )
+                          : Text(
+                        fullName, // Üstteki büyük başlıkta Ad Soyad yazıyor
                         style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white),
                       ),
                       const SizedBox(height: 4),
                       Text(
                         'Seviye $currentLevel Gezgini',
-                        style: TextStyle(fontSize: 15, color: Colors.grey.shade400, fontWeight: FontWeight.w500),
+                        style: TextStyle(fontSize: 15, color: Colors.blueAccent.shade100, fontWeight: FontWeight.w600),
+                      ),
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        decoration: BoxDecoration(
+                          color: cardBg,
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: Column(
+                          children: [
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.email_outlined, size: 16, color: Colors.blueAccent),
+                                const SizedBox(width: 8),
+                                Text(email, style: TextStyle(fontSize: 13, color: Colors.grey.shade300)), // E-posta kartta sabit kalıyor
+                              ],
+                            ),
+                            const Divider(color: Colors.white12, height: 16),
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.phone_outlined, size: 16, color: Colors.greenAccent),
+                                const SizedBox(width: 8),
+                                Text(phone, style: TextStyle(fontSize: 13, color: Colors.grey.shade300)),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.orangeAccent,
+                          side: const BorderSide(color: Colors.orangeAccent),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        onPressed: _requestPasswordReset,
+                        icon: const Icon(Icons.lock_reset, size: 18),
+                        label: const Text('Şifre Değiştir / Doğrulama Kodu İste'),
                       ),
                     ],
                   ),
                 ),
                 const SizedBox(height: 32),
-
-                // Seviye Çubuğu
                 Container(
                   padding: const EdgeInsets.all(20),
                   decoration: BoxDecoration(
@@ -160,8 +396,6 @@ class _ProfileViewState extends State<ProfileView> {
                   ),
                 ),
                 const SizedBox(height: 32),
-
-                // YENİ: FİZİKSEL AKTİVİTELER
                 _buildSectionTitle('Fiziksel Aktiviteler', Icons.emoji_events, Colors.amber),
                 const SizedBox(height: 16),
                 GridView.count(
@@ -179,8 +413,6 @@ class _ProfileViewState extends State<ProfileView> {
                   ],
                 ),
                 const SizedBox(height: 32),
-
-                // YENİ: EKONOMİ & BÜTÇE
                 _buildSectionTitle('Ekonomi & Bütçe', Icons.account_balance_wallet, Colors.greenAccent),
                 const SizedBox(height: 16),
                 GridView.count(
@@ -198,8 +430,6 @@ class _ProfileViewState extends State<ProfileView> {
                   ],
                 ),
                 const SizedBox(height: 32),
-
-                // YENİ: KEŞİF & KATEGORİ
                 _buildSectionTitle('Keşif & Kategori', Icons.explore, Colors.purpleAccent),
                 const SizedBox(height: 16),
                 GridView.count(
@@ -225,7 +455,6 @@ class _ProfileViewState extends State<ProfileView> {
     );
   }
 
-  // Arayüzü temiz tutmak için başlıkları çizen yardımcı widget
   Widget _buildSectionTitle(String title, IconData icon, Color color) {
     return Row(
       children: [
