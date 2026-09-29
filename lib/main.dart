@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:developer';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -6,6 +7,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'features/auth/presentation/view/login_view.dart';
+import 'features/auth/presentation/view/reset_password_view.dart';
 import 'features/trip_optimizer/presentation/viewmodel/trip_optimizer_cubit.dart';
 import 'injection_container.dart' as di;
 
@@ -13,6 +15,9 @@ import 'features/trip_optimizer/data/models/spot_model.dart';
 import 'features/trip_optimizer/data/models/itinerary_day_model.dart';
 import 'core/services/notification_service.dart';
 import 'features/auth/presentation/viewmodel/auth_cubit.dart';
+
+/// Global navigator key — deep link callback'lerinde navigate etmek için
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -69,18 +74,53 @@ Future<void> _initializeServices() async {
   }
 }
 
-class TripOptimizerApp extends StatelessWidget {
+class TripOptimizerApp extends StatefulWidget {
   const TripOptimizerApp({super.key});
 
   @override
+  State<TripOptimizerApp> createState() => _TripOptimizerAppState();
+}
+
+class _TripOptimizerAppState extends State<TripOptimizerApp> {
+  late final StreamSubscription<AuthState> _authSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+    _listenToAuthStateChanges();
+  }
+
+  void _listenToAuthStateChanges() {
+    _authSubscription = Supabase.instance.client.auth.onAuthStateChange.listen((data) {
+      final event = data.event;
+      log("🔑 Auth event: $event");
+
+      if (event == AuthChangeEvent.passwordRecovery) {
+        // Kullanıcı email'deki reset linkine tıkladı ve uygulama açıldı
+        // Şifre değiştirme ekranına yönlendir
+        log("🔐 Şifre sıfırlama callback geldi, yönlendiriliyor...");
+        navigatorKey.currentState?.push(
+          MaterialPageRoute(builder: (_) => const ResetPasswordView()),
+        );
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _authSubscription.cancel();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    // Init main()'da tamamlandı, direkt app'i yükle
     return MultiBlocProvider(
       providers: [
         BlocProvider(create: (_) => di.sl<AuthCubit>()),
         BlocProvider(create: (_) => di.sl<TripOptimizerCubit>()),
       ],
       child: MaterialApp(
+            navigatorKey: navigatorKey,
             title: 'Trip Optimizer',
             debugShowCheckedModeBanner: false,
             theme: ThemeData(
@@ -128,4 +168,4 @@ class TripOptimizerApp extends StatelessWidget {
           ),
     );
   }
-}
+}

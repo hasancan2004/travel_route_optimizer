@@ -68,5 +68,17 @@
 	</array>
 	<key>NSLocationWhenInUseUsageDescription</key>
     <string>Rotanı ve mekanlara olan uzaklığını görebilmen için konumuna ihtiyacımız var.</string>
+	<!-- Deep Link: Supabase auth callback (şifre sıfırlama vb.) -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>io.supabase.traveloptimizer</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

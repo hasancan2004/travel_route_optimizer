@@ -32,47 +32,95 @@ class _LoginViewState extends State<LoginView> {
   }
 
   void _showForgotPasswordDialog(BuildContext context) {
-    final resetController = TextEditingController();
-    showDialog(
-      context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          backgroundColor: cardBg,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: const Text('Şifreni mi Unuttun? 🔑', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-          content: TextField(
-            controller: resetController,
-            style: const TextStyle(color: Colors.white),
-            decoration: InputDecoration(
-              labelText: 'E-posta Adresin',
-              labelStyle: TextStyle(color: Colors.grey.shade400),
-              filled: true,
-              fillColor: inputBg,
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+    final existingEmail = _emailController.text.trim();
+
+    // E-posta zaten girildiyse direkt onay iste, tekrar sorma
+    if (existingEmail.isNotEmpty && existingEmail.contains('@')) {
+      showDialog(
+        context: context,
+        builder: (dialogContext) {
+          return AlertDialog(
+            backgroundColor: cardBg,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            title: const Text('Şifreni mi Unuttun? 🔑', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            content: RichText(
+              text: TextSpan(
+                style: TextStyle(color: Colors.grey.shade300, fontSize: 15, height: 1.5),
+                children: [
+                  const TextSpan(text: 'Şifre sıfırlama bağlantısı '),
+                  TextSpan(
+                    text: existingEmail,
+                    style: const TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold),
+                  ),
+                  const TextSpan(text: ' adresine gönderilecek.'),
+                ],
+              ),
             ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: Text('İptal', style: TextStyle(color: Colors.grey.shade400)),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.blueAccent),
-              onPressed: () {
-                if (resetController.text.isNotEmpty) {
-                  context.read<AuthCubit>().resetPassword(resetController.text.trim());
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: Text('İptal', style: TextStyle(color: Colors.grey.shade400)),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.blueAccent),
+                onPressed: () {
+                  context.read<AuthCubit>().resetPassword(existingEmail);
                   Navigator.pop(dialogContext);
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Şifre sıfırlama bağlantısı e-postanıza gönderildi!')),
+                    const SnackBar(content: Text('Şifre sıfırlama bağlantısı e-postanıza gönderildi! 📧')),
                   );
-                }
-              },
-              child: const Text('Gönder', style: TextStyle(color: Colors.white)),
+                },
+                child: const Text('Gönder', style: TextStyle(color: Colors.white)),
+              ),
+            ],
+          );
+        },
+      );
+    } else {
+      // E-posta alanı boşsa, e-posta sor
+      final resetController = TextEditingController();
+      showDialog(
+        context: context,
+        builder: (dialogContext) {
+          return AlertDialog(
+            backgroundColor: cardBg,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            title: const Text('Şifreni mi Unuttun? 🔑', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            content: TextField(
+              controller: resetController,
+              keyboardType: TextInputType.emailAddress,
+              style: const TextStyle(color: Colors.white),
+              decoration: InputDecoration(
+                labelText: 'E-posta Adresin',
+                labelStyle: TextStyle(color: Colors.grey.shade400),
+                filled: true,
+                fillColor: inputBg,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+              ),
             ),
-          ],
-        );
-      },
-    );
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: Text('İptal', style: TextStyle(color: Colors.grey.shade400)),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.blueAccent),
+                onPressed: () {
+                  if (resetController.text.isNotEmpty) {
+                    context.read<AuthCubit>().resetPassword(resetController.text.trim());
+                    Navigator.pop(dialogContext);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Şifre sıfırlama bağlantısı e-postanıza gönderildi! 📧')),
+                    );
+                  }
+                },
+                child: const Text('Gönder', style: TextStyle(color: Colors.white)),
+              ),
+            ],
+          );
+        },
+      );
+    }
   }
 
   @override

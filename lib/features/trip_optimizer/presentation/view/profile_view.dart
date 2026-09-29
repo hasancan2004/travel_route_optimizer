@@ -181,7 +181,12 @@ class _ProfileViewState extends State<ProfileView> {
     if (email == null) return;
 
     try {
-      await _supabase.auth.resetPasswordForEmail(email);
+      // İŞTE EKSİK OLAN SİHİRLİ KOD BURASI: redirectTo parametresi!
+      await _supabase.auth.resetPasswordForEmail(
+        email,
+        redirectTo: 'io.supabase.traveloptimizer://',
+      );
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
