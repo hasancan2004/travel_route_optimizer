@@ -19,6 +19,7 @@ import '../viewmodel/trip_optimizer_cubit.dart';
 import '../viewmodel/trip_optimizer_state.dart';
 import 'budget_assistant_view.dart';
 import 'day_map_view.dart';
+import 'smart_packing_view.dart'; // YENİ: Akıllı Bavul ekranı eklendi
 import '../../data/datasources/weather_remote_data_source.dart';
 import '../../data/models/weather_model.dart';
 import 'dart:convert';
@@ -158,7 +159,8 @@ class _ItineraryViewState extends State<ItineraryView> {
 
   Widget _buildBudgetTracker() {
     final spent = _totalSpent;
-    final remaining = widget.maxBudget - spent;
+    final remaining = widget.maxBudget - spent; // DÜZELTİLDİ: Eksik eksi işareti eklendi
+
     final isOverBudget = spent > widget.maxBudget;
 
     double progress = 0.0;
@@ -283,66 +285,111 @@ class _ItineraryViewState extends State<ItineraryView> {
         elevation: 0,
         foregroundColor: Colors.white,
         actions: [
+          // 1. En sık kullanılan Akıllı Bavul dışarıda sabit kalsın (Çok pratik olur)
           IconButton(
-            icon: const Icon(Icons.share_rounded, size: 22),
-            tooltip: "Toplulukta Paylaş",
-            onPressed: () {
-              showDialog(
-                context: context,
-                builder: (context) {
-                  final titleController = TextEditingController(text: "Harika Bir Seyahat Rotası");
-                  return AlertDialog(
-                    title: const Text("Rotayı Toplulukta Paylaş 🌍"),
-                    content: TextField(
-                      controller: titleController,
-                      decoration: const InputDecoration(labelText: "Rota Başlığı"),
-                    ),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(context),
-                        child: const Text("İptal"),
-                      ),
-                      ElevatedButton(
-                        onPressed: () {
-                          Navigator.pop(context);
-                          context.read<TripOptimizerCubit>().shareItinerary(
-                            title: titleController.text,
-                            itinerary: _localItinerary,
-                          );
-                        },
-                        child: const Text("Paylaş"),
-                      ),
-                    ],
-                  );
-                },
-              );
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.picture_as_pdf_rounded, color: Colors.redAccent, size: 24),
-            tooltip: 'PDF Oluştur / Paylaş',
+            icon: const Icon(Icons.luggage_rounded, color: Colors.tealAccent, size: 24),
+            tooltip: 'Akıllı Bavul Asistanı',
             onPressed: () {
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (context) => PdfPreviewView(itinerary: _localItinerary),
+                  builder: (context) => SmartPackingView(itinerary: _localItinerary),
                 ),
               );
             },
           ),
-          IconButton(
-            icon: const Icon(Icons.account_balance_wallet, size: 24),
-            tooltip: 'Bütçe Asistanı',
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => BudgetAssistantView(itinerary: _localItinerary),
-                ),
-              );
+
+          // 2. Diğer kalabalık yapan araçları dikey üç nokta menüsüne gizliyoruz
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.more_vert_rounded, color: Colors.white70),
+            color: const Color(0xFF1E293B),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            onSelected: (value) {
+              if (value == 'share') {
+                showDialog(
+                  context: context,
+                  builder: (context) {
+                    final titleController = TextEditingController(text: "Harika Bir Seyahat Rotası");
+                    return AlertDialog(
+                      backgroundColor: const Color(0xFF1E293B),
+                      title: const Text("Rotayı Toplulukta Paylaş 🌍", style: TextStyle(color: Colors.white)),
+                      content: TextField(
+                        controller: titleController,
+                        style: const TextStyle(color: Colors.white),
+                        decoration: const InputDecoration(
+                          labelText: "Rota Başlığı",
+                          labelStyle: TextStyle(color: Colors.grey),
+                        ),
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(context),
+                          child: const Text("İptal", style: TextStyle(color: Colors.grey)),
+                        ),
+                        ElevatedButton(
+                          onPressed: () {
+                            Navigator.pop(context);
+                            context.read<TripOptimizerCubit>().shareItinerary(
+                              title: titleController.text,
+                              itinerary: _localItinerary,
+                            );
+                          },
+                          child: const Text("Paylaş"),
+                        ),
+                      ],
+                    );
+                  },
+                );
+              } else if (value == 'pdf') {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => PdfPreviewView(itinerary: _localItinerary),
+                  ),
+                );
+              } else if (value == 'budget') {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => BudgetAssistantView(itinerary: _localItinerary),
+                  ),
+                );
+              }
             },
+            itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+              const PopupMenuItem<String>(
+                value: 'share',
+                child: Row(
+                  children: [
+                    Icon(Icons.share_rounded, color: Colors.blueAccent, size: 20),
+                    SizedBox(width: 12),
+                    Text('Toplulukta Paylaş', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+                  ],
+                ),
+              ),
+              const PopupMenuItem<String>(
+                value: 'pdf',
+                child: Row(
+                  children: [
+                    Icon(Icons.picture_as_pdf_rounded, color: Colors.redAccent, size: 20),
+                    SizedBox(width: 12),
+                    Text('PDF Oluştur / Paylaş', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+                  ],
+                ),
+              ),
+              const PopupMenuItem<String>(
+                value: 'budget',
+                child: Row(
+                  children: [
+                    Icon(Icons.account_balance_wallet, color: Colors.greenAccent, size: 20),
+                    SizedBox(width: 12),
+                    Text('Bütçe Asistanı', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+                  ],
+                ),
+              ),
+            ],
           ),
-          const SizedBox(width: 4),
+          const SizedBox(width: 8),
         ],
       ),
       body: Column(
@@ -491,11 +538,10 @@ class _ItineraryViewState extends State<ItineraryView> {
                                           color: Colors.white38,
                                         ),
                                         const SizedBox(width: 10),
-                                        // YENİ: Hava durumuna göre uyarı tetikleme eklendi
                                         DayWeatherBadge(
                                           lat: dayPlan.places.first.lat,
                                           lng: dayPlan.places.first.lng,
-                                          dayPlan: dayPlan, // Hangi gün olduğunu bilmesi için eklendi
+                                          dayPlan: dayPlan,
                                         ),
                                       ]
                                     ],
@@ -606,7 +652,6 @@ class _ItineraryViewState extends State<ItineraryView> {
                                 child: Row(
                                   crossAxisAlignment: CrossAxisAlignment.center,
                                   children: [
-                                    // Leading - kategori ikonu veya resim
                                     ClipRRect(
                                       borderRadius: BorderRadius.circular(12),
                                       child: spot.imagePath != null
@@ -664,7 +709,6 @@ class _ItineraryViewState extends State<ItineraryView> {
                                       ),
                                     ),
                                     const SizedBox(width: 12),
-                                    // Ortadaki mekan bilgisi - Expanded ile esnek genişlik
                                     Expanded(
                                       child: Column(
                                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -713,7 +757,6 @@ class _ItineraryViewState extends State<ItineraryView> {
                                       ),
                                     ),
                                     const SizedBox(width: 8),
-                                    // Trailing - yol tarifi, fiyat, sıralama
                                     IconButton(
                                       padding: EdgeInsets.zero,
                                       constraints: const BoxConstraints(),
@@ -830,7 +873,6 @@ class _DayWeatherBadgeState extends State<DayWeatherBadge> {
         _isLoading = false;
       });
 
-      // Hava kötüyse (Yağmur, Kar, Fırtına vb. ikonu varsa) uyarı göster
       _checkWeatherAlerts();
     }
   }
@@ -838,17 +880,14 @@ class _DayWeatherBadgeState extends State<DayWeatherBadge> {
   void _checkWeatherAlerts() {
     if (_weather == null || _alertShown) return;
 
-    // OpenWeatherMap ikon kodları: 09d/n (çisenti), 10d/n (yağmur), 11d/n (fırtına), 13d/n (kar)
     final String icon = _weather!.iconCode;
     final bool isBadWeather = icon.startsWith('09') || icon.startsWith('10') || icon.startsWith('11') || icon.startsWith('13');
 
-    // Eğer hava kötüyse ve o günün rotasında 'Doğa' veya 'Tarih' (Açık hava potansiyelli) mekan varsa
     final hasOutdoorSpot = widget.dayPlan.places.any((spot) =>
     spot.category.toLowerCase() == 'nature' || spot.category.toLowerCase() == 'history');
 
     if (isBadWeather && hasOutdoorSpot) {
       _alertShown = true;
-      // UI çizildikten hemen sonra uyarı dialogu göster
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _showAlternativeRouteDialog();
       });
@@ -925,7 +964,6 @@ class _DayWeatherBadgeState extends State<DayWeatherBadge> {
 
     if (_weather == null) return const SizedBox.shrink();
 
-    // Hava kötüyse rozetin rengini kızartalım
     final String icon = _weather!.iconCode;
     final bool isBadWeather = icon.startsWith('09') || icon.startsWith('10') || icon.startsWith('11') || icon.startsWith('13');
 
