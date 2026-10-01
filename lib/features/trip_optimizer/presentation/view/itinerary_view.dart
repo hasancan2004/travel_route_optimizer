@@ -64,7 +64,11 @@ class _ItineraryViewState extends State<ItineraryView> {
   }
 
   void _autoSave() {
-    context.read<TripOptimizerCubit>().autoSaveItinerary(_localItinerary);
+    final cubit = context.read<TripOptimizerCubit>();
+    cubit.autoSaveItinerary(_localItinerary);
+
+    // YENİ: Rota her güncellendiğinde Makine Öğrenmesi modeli maliyeti tahmin etsin
+    cubit.checkBudgetWithML(_localItinerary);
   }
 
   double get _totalSpent {
@@ -158,116 +162,183 @@ class _ItineraryViewState extends State<ItineraryView> {
   }
 
   Widget _buildBudgetTracker() {
-    final spent = _totalSpent;
-    final remaining = widget.maxBudget - spent; // DÜZELTİLDİ: Eksik eksi işareti eklendi
+    // YENİ: Cubit'teki Bütçe Kâhini verilerini anlık dinlemek için BlocBuilder ekledik
+    return BlocBuilder<TripOptimizerCubit, TripOptimizerState>(
+      builder: (context, state) {
+        final cubit = context.read<TripOptimizerCubit>();
+        final mlWarning = cubit.mlBudgetWarning;
+        final mlPredictedCost = cubit.mlPredictedCost;
 
-    final isOverBudget = spent > widget.maxBudget;
+        final spent = _totalSpent;
+        final remaining = widget.maxBudget - spent;
+        final isOverBudget = spent > widget.maxBudget;
 
-    double progress = 0.0;
-    if (widget.maxBudget > 0) {
-      progress = (spent / widget.maxBudget).clamp(0.0, 1.0);
-    } else {
-      progress = spent > 0 ? 1.0 : 0.0;
-    }
+        double progress = 0.0;
+        if (widget.maxBudget > 0) {
+          progress = (spent / widget.maxBudget).clamp(0.0, 1.0);
+        } else {
+          progress = spent > 0 ? 1.0 : 0.0;
+        }
 
-    Color progressColor;
-    if (isOverBudget) {
-      progressColor = Colors.redAccent;
-    } else if (progress > 0.8) {
-      progressColor = Colors.orangeAccent;
-    } else {
-      progressColor = Colors.greenAccent;
-    }
+        Color progressColor;
+        if (isOverBudget) {
+          progressColor = Colors.redAccent;
+        } else if (progress > 0.8) {
+          progressColor = Colors.orangeAccent;
+        } else {
+          progressColor = Colors.greenAccent;
+        }
 
-    return Container(
-      margin: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1E293B),
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.2),
-            blurRadius: 15,
-            offset: const Offset(0, 8),
-          ),
-        ],
-        border: Border.all(
-          color: isOverBudget ? Colors.redAccent.withOpacity(0.5) : Colors.transparent,
-          width: 1.5,
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text(
-                'Maliyet Özeti',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: isOverBudget ? Colors.redAccent.withOpacity(0.2) : progressColor.withOpacity(0.2),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Text(
-                  isOverBudget ? 'Bütçe Aşıldı!' : 'Kalan: ${remaining.toStringAsFixed(0)} ₺',
-                  style: TextStyle(
-                    color: progressColor,
-                    fontSize: 13,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
+        return Container(
+          margin: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: const Color(0xFF1E293B),
+            borderRadius: BorderRadius.circular(24),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.2),
+                blurRadius: 15,
+                offset: const Offset(0, 8),
               ),
             ],
-          ),
-          const SizedBox(height: 16),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: LinearProgressIndicator(
-              value: progress,
-              minHeight: 10,
-              backgroundColor: Colors.white.withOpacity(0.1),
-              valueColor: AlwaysStoppedAnimation<Color>(progressColor),
+            border: Border.all(
+              color: isOverBudget ? Colors.redAccent.withOpacity(0.5) : Colors.transparent,
+              width: 1.5,
             ),
           ),
-          const SizedBox(height: 12),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text('Harcanan', style: TextStyle(color: Colors.grey.shade400, fontSize: 12)),
-                  const SizedBox(height: 4),
-                  Text(
-                    '${spent.toStringAsFixed(0)} ₺',
-                    style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                  const Text(
+                    'Maliyet Özeti',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: isOverBudget ? Colors.redAccent.withOpacity(0.2) : progressColor.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      isOverBudget ? 'Bütçe Aşıldı!' : 'Kalan: ${remaining.toStringAsFixed(0)} ₺',
+                      style: TextStyle(
+                        color: progressColor,
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ),
                 ],
               ),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
+              const SizedBox(height: 16),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: LinearProgressIndicator(
+                  value: progress,
+                  minHeight: 10,
+                  backgroundColor: Colors.white.withOpacity(0.1),
+                  valueColor: AlwaysStoppedAnimation<Color>(progressColor),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text('Toplam Bütçe', style: TextStyle(color: Colors.grey.shade400, fontSize: 12)),
-                  const SizedBox(height: 4),
-                  Text(
-                    '${widget.maxBudget.toStringAsFixed(0)} ₺',
-                    style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Harcanan', style: TextStyle(color: Colors.grey.shade400, fontSize: 12)),
+                      const SizedBox(height: 4),
+                      Text(
+                        '${spent.toStringAsFixed(0)} ₺',
+                        style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                      ),
+                    ],
+                  ),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text('Toplam Bütçe', style: TextStyle(color: Colors.grey.shade400, fontSize: 12)),
+                      const SizedBox(height: 4),
+                      Text(
+                        '${widget.maxBudget.toStringAsFixed(0)} ₺',
+                        style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                      ),
+                    ],
                   ),
                 ],
               ),
+
+              // ==========================================
+              // YENİ: MAKİNE ÖĞRENMESİ BÜTÇE UYARI KARTI
+              // ==========================================
+              if (mlWarning != null) ...[
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.orangeAccent.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.orangeAccent.withOpacity(0.5)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.psychology_alt, color: Colors.orangeAccent, size: 28),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Yapay Zeka Bütçe Kâhini 🔮',
+                              style: TextStyle(color: Colors.orangeAccent, fontWeight: FontWeight.bold, fontSize: 13),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              mlWarning,
+                              style: const TextStyle(color: Colors.white70, fontSize: 12),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ] else if (mlPredictedCost != null) ...[
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.greenAccent.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.greenAccent.withOpacity(0.3)),
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(Icons.psychology_alt, color: Colors.greenAccent, size: 28),
+                      SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          'Yapay Zeka Kâhini 🔮\nBütçe planlaması harika, bir sorun görünmüyor!',
+                          style: TextStyle(color: Colors.greenAccent, fontSize: 12, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ]
             ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 

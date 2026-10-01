@@ -229,4 +229,17 @@ class TripRepositoryImpl implements TripRepository {
   Future<Map<String, dynamic>> analyzePromptWithAI(String prompt) async {
     return await remoteDataSource.analyzePromptWithAI(prompt);
   }
+
+  @override
+  Future<Map<String, dynamic>> predictBudget({
+    required String city,
+    required List<String> places,
+    required double userBudget,
+  }) async {
+    return await remoteDataSource.predictBudget(
+      city: city,
+      places: places,
+      userBudget: userBudget,
+    );
+  }
 }

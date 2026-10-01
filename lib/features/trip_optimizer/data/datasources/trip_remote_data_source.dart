@@ -22,10 +22,8 @@ abstract class TripRemoteDataSource {
     required List<Map<String, dynamic>> itinerary,
   });
 
-  // 1. Arayüze keşfet imzasını ekledik
   Future<List<Map<String, dynamic>>> exploreItineraries();
 
-  // 2. Arayüze paylaş imzasını ekledik
   Future<void> shareItinerary({
     required String userId,
     required String authorName,
@@ -38,13 +36,19 @@ abstract class TripRemoteDataSource {
   Future<List<List<ItineraryDayModel>>> getUserItinerariesFromCloud(String userId);
 
   Future<Map<String, dynamic>> analyzePromptWithAI(String prompt);
+
+  // YENİ: Makine Öğrenmesi (Bütçe Kâhini) için API imzamız
+  Future<Map<String, dynamic>> predictBudget({
+    required String city,
+    required List<String> places,
+    required double userBudget,
+  });
 }
 
 class TripRemoteDataSourceImpl implements TripRemoteDataSource {
   final Dio dio;
   final String baseUrl = 'https://travel-optimizer-api.onrender.com';
   //final String baseUrl = 'http://10.0.2.2:8000';
-
 
   TripRemoteDataSourceImpl({required this.dio});
 
@@ -128,7 +132,6 @@ class TripRemoteDataSourceImpl implements TripRemoteDataSource {
     }
   }
 
-  // 3. BURASI ÖNEMLİ: exploreItineraries fonksiyonunun gövdesi
   @override
   Future<List<Map<String, dynamic>>> exploreItineraries() async {
     try {
@@ -144,7 +147,6 @@ class TripRemoteDataSourceImpl implements TripRemoteDataSource {
     }
   }
 
-  // 4. BURASI ÖNEMLİ: shareItinerary fonksiyonunun gövdesi
   @override
   Future<void> shareItinerary({
     required String userId,
@@ -181,8 +183,6 @@ class TripRemoteDataSourceImpl implements TripRemoteDataSource {
       final response = await dio.get('$baseUrl/user-itineraries/$userId');
       if (response.statusCode == 200) {
         final List data = response.data['itineraries'];
-
-        // JSON'u List<List<ItineraryDayModel>> formatına çeviriyoruz
         return data.map<List<ItineraryDayModel>>((itineraryJson) {
           final List daysList = itineraryJson['itinerary'];
           return daysList.map((dayJson) => ItineraryDayModel.fromJson(dayJson)).toList();
@@ -209,7 +209,6 @@ class TripRemoteDataSourceImpl implements TripRemoteDataSource {
         throw Exception('Sunucu Hatası: ${response.statusCode}');
       }
     } on DioException catch (e) {
-      // YENİ: Dio'nun uzun ingilizce hatası yerine backend'den gelen asıl "detail" mesajını çekiyoruz!
       final errorData = e.response?.data;
       final errorMessage = errorData != null && errorData['detail'] != null
           ? errorData['detail']
@@ -217,6 +216,41 @@ class TripRemoteDataSourceImpl implements TripRemoteDataSource {
       throw Exception('Backend Diyor ki: $errorMessage');
     } catch (e) {
       throw Exception('Bilinmeyen Hata: $e');
+    }
+  }
+
+  // ==========================================
+  // YENİ: MAKİNE ÖĞRENMESİ (BÜTÇE KÂHİNİ) İSTEĞİ
+  // ==========================================
+  @override
+  Future<Map<String, dynamic>> predictBudget({
+    required String city,
+    required List<String> places,
+    required double userBudget,
+  }) async {
+    try {
+      final response = await dio.post(
+        '$baseUrl/predict-budget',
+        data: {
+          "city": city,
+          "places": places,
+          "user_budget": userBudget,
+        },
+      );
+
+      if (response.statusCode == 200) {
+        return response.data as Map<String, dynamic>;
+      } else {
+        throw Exception('Bütçe Kâhini Sunucu Hatası: ${response.statusCode}');
+      }
+    } on DioException catch (e) {
+      final errorData = e.response?.data;
+      final errorMessage = errorData != null && errorData['detail'] != null
+          ? errorData['detail']
+          : e.message;
+      throw Exception('Bütçe Kâhini Hatası: $errorMessage');
+    } catch (e) {
+      throw Exception('Bilinmeyen Kâhin Hatası: $e');
     }
   }
 }

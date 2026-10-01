@@ -24,6 +24,9 @@ class TripOptimizerCubit extends Cubit<TripOptimizerState> {
   List<Map<String, dynamic>> extraExpenses = [];
   String currentCity = "Bilinmeyen Şehir";
 
+  String? mlBudgetWarning; // Makine öğrenmesi uyarısı
+  double? mlPredictedCost;
+
   TripOptimizerCubit({
     required this.getCitySpotsUseCase,
     required this.optimizeRouteUseCase,
@@ -289,6 +292,44 @@ class TripOptimizerCubit extends Cubit<TripOptimizerState> {
       debugPrint("❌ [AI] AI Alternatif Hatası: $e");
       debugPrint("❌ [AI] Stack Trace: $stackTrace");
       return "AI Hatası: $e";
+    }
+  }
+
+  Future<void> checkBudgetWithML(List<ItineraryDayEntity> itinerary) async {
+    try {
+      debugPrint("🔮 [ML] Bütçe Kâhini çalışıyor...");
+
+      // Tüm rotadaki mekan kategorilerini tek bir listede topluyoruz
+      List<String> allCategories = [];
+      for (var day in itinerary) {
+        for (var spot in day.places) {
+          allCategories.add(spot.category.toLowerCase());
+        }
+      }
+
+      // FastAPI'deki modele (RandomForest) istek atıyoruz
+      final result = await repository.predictBudget(
+        city: currentCity,
+        places: allCategories,
+        userBudget: currentTotalBudget,
+      );
+
+      debugPrint("🔮 [ML] Sonuç: $result");
+
+      // Eğer bütçe aşımı varsa uyarıyı state'e kaydediyoruz
+      if (result['budget_status'] == 'warning') {
+        mlBudgetWarning = result['message'];
+      } else {
+        mlBudgetWarning = null;
+      }
+
+      mlPredictedCost = (result['predicted_cost'] as num).toDouble();
+
+      // Arayüzü (itinerary_view) tetikleyip uyarıyı ekranda gösteriyoruz
+      emit(BudgetUpdatedState());
+
+    } catch (e) {
+      debugPrint("❌ [ML] Bütçe Kâhini Hatası: $e");
     }
   }
 }

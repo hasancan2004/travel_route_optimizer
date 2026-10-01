@@ -41,4 +41,10 @@ abstract class TripRepository {
   });
 
   Future<Map<String, dynamic>> analyzePromptWithAI(String prompt);
+
+  Future<Map<String, dynamic>> predictBudget({
+    required String city,
+    required List<String> places,
+    required double userBudget,
+  });
 }
