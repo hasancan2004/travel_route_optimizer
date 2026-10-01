@@ -14,6 +14,9 @@ import '../../domain/entities/itinerary_day_entity.dart';
 import '../../domain/entities/spot_entity.dart';
 import '../../data/datasources/trip_remote_data_source.dart';
 
+import 'package:flutter_bloc/flutter_bloc.dart';
+import '../viewmodel/trip_optimizer_cubit.dart';
+
 class DayMapView extends StatefulWidget {
   final ItineraryDayEntity dayPlan;
 
@@ -836,7 +839,7 @@ class _DayMapViewState extends State<DayMapView> {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
-      builder: (context) {
+      builder: (bottomSheetContext) { // Context çakışmasını önlemek için ismini değiştirdik
         return Container(
           padding: const EdgeInsets.all(24),
           decoration: const BoxDecoration(
@@ -903,20 +906,88 @@ class _DayMapViewState extends State<DayMapView> {
                 ],
               ),
               const SizedBox(height: 24),
-              ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blueAccent,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  elevation: 0,
+
+              // ==========================================
+              // YENİ: AI İLE ALTERNATİF ÜRET BUTONU
+              // ==========================================
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.deepPurpleAccent, // Yapay Zeka hissiyatı
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    elevation: 0,
+                  ),
+                  onPressed: () async {
+                    // Yükleniyor dialogu göster
+                    showDialog(
+                      context: context,
+                      barrierDismissible: false,
+                      builder: (_) => const Center(
+                        child: CircularProgressIndicator(color: Colors.deepPurpleAccent),
+                      ),
+                    );
+
+                    // Cubit üzerinden servise istek at
+                    final cubit = context.read<TripOptimizerCubit>();
+                    final errorMessage = await cubit.replaceSpotWithAIAlternatives(widget.dayPlan, spot);
+
+                    if (context.mounted) {
+                      Navigator.pop(context); // Yükleniyor dialogunu kapat
+                      Navigator.pop(bottomSheetContext); // Bottom sheet'i kapat
+
+                      if (errorMessage == null) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              'Yapay Zeka rotayı güncelledi!',
+                              style: TextStyle(color: Colors.white),
+                            ),
+                            backgroundColor: Colors.deepPurpleAccent,
+                          ),
+                        );
+                        // Haritadaki pinleri ve çizgileri anında yeniden çizdir
+                        _initializeMapData();
+                      } else {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              'Hata: $errorMessage',
+                              style: const TextStyle(color: Colors.white),
+                            ),
+                            backgroundColor: Colors.redAccent,
+                            duration: const Duration(seconds: 5),
+                          ),
+                        );
+                      }
+                    }
+                  },
+                  icon: const Icon(Icons.auto_awesome, color: Colors.white),
+                  label: const Text('Yapay Zeka ile Alternatif Üret', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                 ),
-                onPressed: () {
-                  Navigator.pop(context);
-                  _openMapNavigation(spot.lat, spot.lng);
-                },
-                icon: const Icon(Icons.directions, color: Colors.white),
-                label: const Text('Yol Tarifi Al / Haritada Aç', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+              ),
+              const SizedBox(height: 12),
+
+              // MEVCUT YOL TARİFİ BUTONU
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blueAccent,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    elevation: 0,
+                  ),
+                  onPressed: () {
+                    Navigator.pop(bottomSheetContext);
+                    _openMapNavigation(spot.lat, spot.lng);
+                  },
+                  icon: const Icon(Icons.directions, color: Colors.white),
+                  label: const Text('Yol Tarifi Al / Haritada Aç', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                ),
               ),
               const SizedBox(height: 12),
               SizedBox(
@@ -926,7 +997,7 @@ class _DayMapViewState extends State<DayMapView> {
                     foregroundColor: Colors.grey.shade700,
                     padding: const EdgeInsets.symmetric(vertical: 14),
                   ),
-                  onPressed: () => Navigator.pop(context),
+                  onPressed: () => Navigator.pop(bottomSheetContext),
                   child: const Text('Kapat', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                 ),
               )

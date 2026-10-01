@@ -934,14 +934,66 @@ class _DayWeatherBadgeState extends State<DayWeatherBadge> {
                 foregroundColor: Colors.black87,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               ),
-              onPressed: () {
+              onPressed: () async {
                 Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Yapay zeka kapalı mekan alternatifleri arıyor... 🔍 (Çok yakında!)'),
-                    backgroundColor: Colors.orangeAccent,
-                  ),
-                );
+
+                // Açık hava mekanlarını bul
+                final outdoorSpots = widget.dayPlan.places.where((spot) =>
+                  spot.category.toLowerCase() == 'nature' || 
+                  spot.category.toLowerCase() == 'history' ||
+                  spot.isOutdoor
+                ).toList();
+
+                if (outdoorSpots.isEmpty) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Açık hava mekanı bulunamadı.'),
+                        backgroundColor: Colors.grey,
+                      ),
+                    );
+                  }
+                  return;
+                }
+
+                // Yükleniyor göster
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Yapay zeka kapalı mekan alternatifleri arıyor... 🔍'),
+                      backgroundColor: Colors.orangeAccent,
+                      duration: Duration(seconds: 10),
+                    ),
+                  );
+                }
+
+                final cubit = context.read<TripOptimizerCubit>();
+                bool anySuccess = false;
+                String? lastError;
+
+                // Her açık hava mekanı için alternatif iste
+                for (final spot in outdoorSpots) {
+                  final errorMessage = await cubit.replaceSpotWithAIAlternatives(widget.dayPlan, spot);
+                  if (errorMessage == null) {
+                    anySuccess = true;
+                  } else {
+                    lastError = errorMessage;
+                  }
+                }
+
+                if (mounted) {
+                  ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(anySuccess 
+                        ? 'Kapalı mekan alternatifleri eklendi! 🪄' 
+                        : 'Hata: ${lastError ?? "Bilinmeyen hata"}'),
+                      backgroundColor: anySuccess ? Colors.deepPurpleAccent : Colors.redAccent,
+                      duration: const Duration(seconds: 5),
+                    ),
+                  );
+                  if (anySuccess) setState(() {});
+                }
               },
               icon: const Icon(Icons.auto_awesome),
               label: const Text('Alternatif Üret', style: TextStyle(fontWeight: FontWeight.bold)),

@@ -1,20 +1,24 @@
-import 'dart:math';
-
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:dio/dio.dart'; // YENİ: Dio hatalarını yakalamak için
+import 'package:dio/dio.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
 import '../../domain/entities/itinerary_day_entity.dart';
 import '../../domain/entities/spot_entity.dart';
 import '../../domain/repositories/trip_repository.dart';
 import '../../domain/usecases/get_city_spots_usecase.dart';
 import '../../domain/usecases/optimize_route_usecase.dart';
 import 'trip_optimizer_state.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-
+import 'package:travel_route_optimizer/core/services/ai_route_service.dart';
+// spot_model.dart büyük ihtimalle data/models altındadır:
+import '../../data/models/spot_model.dart';
 class TripOptimizerCubit extends Cubit<TripOptimizerState> {
   final GetCitySpotsUseCase getCitySpotsUseCase;
   final OptimizeRouteUseCase optimizeRouteUseCase;
   final TripRepository repository;
+
+  // YENİ: AI Servisimizi başlatıyoruz
+  final AIRouteService aiRouteService = AIRouteService();
 
   double currentTotalBudget = 0.0;
   List<Map<String, dynamic>> extraExpenses = [];
@@ -58,7 +62,6 @@ class TripOptimizerCubit extends Cubit<TripOptimizerState> {
       );
       final itinerary = await optimizeRouteUseCase(params);
 
-      // Eğer backend boş bir liste dönerse (Mekan yoksa vb.)
       if (itinerary.isEmpty) {
         emit(const TripOptimizerError("Bu parametrelerle rota çizilemedi. Lütfen şehir veya bütçe değiştirin."));
       } else {
@@ -66,7 +69,6 @@ class TripOptimizerCubit extends Cubit<TripOptimizerState> {
       }
 
     } catch (e) {
-      // YENİ ZIRH: DioException (Network/HTTP) hatalarını ayıkla ve insancıl hale getir.
       if (e is DioException) {
         if (e.response != null && e.response?.data is Map) {
           final errorData = e.response?.data as Map;
@@ -184,11 +186,9 @@ class TripOptimizerCubit extends Cubit<TripOptimizerState> {
     }
   }
 
-  // YENİ: Tamamen otonom Yapay Zeka Akışı
   Future<void> generateRouteFromAIFlow(String prompt) async {
     emit(TripOptimizerLoading());
     try {
-      // 1. AI'dan parametreleri al (Sayı/Metin hatalarına karşı korumalı)
       final aiParams = await repository.analyzePromptWithAI(prompt);
 
       final city = aiParams['city']?.toString() ?? 'İstanbul';
@@ -201,7 +201,6 @@ class TripOptimizerCubit extends Cubit<TripOptimizerState> {
         if (interests.isEmpty) interests = ['history'];
       }
 
-      // 2. Mekanları sessizce çek (CitySpotsLoaded YAYINLAMIYORUZ)
       currentCity = city;
       final spots = await getCitySpotsUseCase(city);
 
@@ -210,7 +209,6 @@ class TripOptimizerCubit extends Cubit<TripOptimizerState> {
         return;
       }
 
-      // 3. Rotayı sessizce optimize et
       currentTotalBudget = budget;
       extraExpenses.clear();
 
@@ -229,10 +227,68 @@ class TripOptimizerCubit extends Cubit<TripOptimizerState> {
         return;
       }
 
-      // 4. Her şey sorunsuz bittiyse tek seferde ekrana yansıt
       emit(RouteOptimized(itinerary));
     } catch (e) {
       emit(TripOptimizerError("AI Asistan Hatası: ${e.toString()}"));
+    }
+  }
+
+  // ==========================================
+  // YENİ: TEKİL MEKAN İÇİN AI ALTERNATİF MOTORU
+  // ==========================================
+  /// Null dönerse başarılı, String dönerse hata mesajı içerir.
+  Future<String?> replaceSpotWithAIAlternatives(ItineraryDayEntity dayPlan, SpotEntity oldSpot) async {
+    try {
+      debugPrint("🔄 [AI] Alternatif mekan üretme başlıyor... Şehir: $currentCity, Mekan: ${oldSpot.name}");
+
+      // 1. Gemini servisini çağır
+      final newSpotsData = await aiRouteService.getAlternatives(
+        city: currentCity,
+        placeToReplace: oldSpot.name,
+      );
+
+      debugPrint("🔄 [AI] Gemini'den ${newSpotsData.length} adet alternatif döndü.");
+
+      if (newSpotsData.isNotEmpty) {
+        // 2. Dönen JSON objelerini SpotModel'e çevir
+        List<SpotEntity> newSpots = newSpotsData.map((json) {
+          debugPrint("🔄 [AI] JSON parse ediliyor: $json");
+          return SpotModel.fromJson(json);
+        }).toList();
+
+        debugPrint("🔄 [AI] ${newSpots.length} adet SpotModel oluşturuldu.");
+
+        // 3. Eski mekanı listeden bul (isim bazlı arama — Equatable uyumsuzluğunu önler)
+        final spotIndex = dayPlan.places.indexWhere((s) => s.name == oldSpot.name);
+        debugPrint("🔄 [AI] Eski mekan index: $spotIndex");
+
+        if (spotIndex != -1) {
+          // Listeyi mutable hale getir (const constructor'dan gelmiş olabilir)
+          final mutablePlaces = List<SpotEntity>.from(dayPlan.places);
+          mutablePlaces.removeAt(spotIndex);
+          mutablePlaces.insertAll(spotIndex, newSpots);
+
+          // places listesini güncelle
+          dayPlan.places.clear();
+          dayPlan.places.addAll(mutablePlaces);
+
+          debugPrint("✅ [AI] Mekan başarıyla değiştirildi! Yeni liste: ${dayPlan.places.map((s) => s.name).toList()}");
+
+          // State'i tazeleyerek tüm UI'ın haberdar olmasını sağla
+          emit(BudgetUpdatedState());
+          return null; // Başarılı
+        } else {
+          debugPrint("❌ [AI] Eski mekan '${oldSpot.name}' listede bulunamadı!");
+          return "Eski mekan '${oldSpot.name}' listede bulunamadı.";
+        }
+      } else {
+        debugPrint("❌ [AI] Gemini alternatif üretemedi (boş liste döndü).");
+        return "Gemini boş yanıt döndü. API key veya ağ bağlantısını kontrol edin.";
+      }
+    } catch (e, stackTrace) {
+      debugPrint("❌ [AI] AI Alternatif Hatası: $e");
+      debugPrint("❌ [AI] Stack Trace: $stackTrace");
+      return "AI Hatası: $e";
     }
   }
 }
