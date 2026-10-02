@@ -19,9 +19,10 @@ import '../viewmodel/trip_optimizer_cubit.dart';
 import '../viewmodel/trip_optimizer_state.dart';
 import 'budget_assistant_view.dart';
 import 'day_map_view.dart';
-import 'smart_packing_view.dart'; // YENİ: Akıllı Bavul ekranı eklendi
+import 'smart_packing_view.dart';
 import '../../data/datasources/weather_remote_data_source.dart';
 import '../../data/models/weather_model.dart';
+import 'package:travel_route_optimizer/core/services/fuel_price_service.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 
@@ -67,7 +68,6 @@ class _ItineraryViewState extends State<ItineraryView> {
     final cubit = context.read<TripOptimizerCubit>();
     cubit.autoSaveItinerary(_localItinerary);
 
-    // YENİ: Rota her güncellendiğinde Makine Öğrenmesi modeli maliyeti tahmin etsin
     cubit.checkBudgetWithML(_localItinerary);
   }
 
@@ -118,6 +118,153 @@ class _ItineraryViewState extends State<ItineraryView> {
     Share.share(buffer.toString(), subject: 'Seyahat Rotam 🗺️');
   }
 
+  // ==========================================
+  // GÜNCELLENEN: ÖZEL ARAÇ GİRİŞ FORMU
+  // ==========================================
+  void _showVehicleSelectionModal(BuildContext context) {
+    final cubit = context.read<TripOptimizerCubit>();
+    String selectedFuelType = 'gasoline';
+    final TextEditingController consumptionController = TextEditingController();
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF1E293B),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (bottomSheetContext) {
+        return StatefulBuilder(
+            builder: (BuildContext context, StateSetter setState) {
+              return Padding(
+                padding: EdgeInsets.only(
+                  bottom: MediaQuery.of(context).viewInsets.bottom,
+                  left: 20, right: 20, top: 20,
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.directions_car, color: Colors.blueAccent, size: 28),
+                        SizedBox(width: 8),
+                        Text('Roadtrip Modu 🚙', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Aracının yakıt tipini ve 100 km\'deki ortalama tüketimini gir, yakıt masrafını bütçene yansıtalım.',
+                      style: TextStyle(color: Colors.grey.shade400, fontSize: 13),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 24),
+
+                    DropdownButtonFormField<String>(
+                      value: selectedFuelType,
+                      dropdownColor: const Color(0xFF0F172A),
+                      style: const TextStyle(color: Colors.white, fontSize: 16),
+                      decoration: InputDecoration(
+                        labelText: 'Yakıt Tipi',
+                        labelStyle: TextStyle(color: Colors.grey.shade400),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                        prefixIcon: const Icon(Icons.local_gas_station, color: Colors.blueAccent),
+                        filled: true,
+                        fillColor: const Color(0xFF0F172A),
+                      ),
+                      items: const [
+                        DropdownMenuItem(value: 'gasoline', child: Text('Benzin')),
+                        DropdownMenuItem(value: 'diesel', child: Text('Motorin')),
+                      ],
+                      onChanged: (value) {
+                        if (value != null) {
+                          setState(() => selectedFuelType = value);
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 16),
+
+                    TextField(
+                      controller: consumptionController,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      style: const TextStyle(color: Colors.white),
+                      decoration: InputDecoration(
+                        labelText: '100 km\'de Ortalama Tüketim (Litre)',
+                        labelStyle: TextStyle(color: Colors.grey.shade400),
+                        hintText: 'Örn: 6.5',
+                        hintStyle: TextStyle(color: Colors.grey.shade600),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                        prefixIcon: const Icon(Icons.speed, color: Colors.blueAccent),
+                        filled: true,
+                        fillColor: const Color(0xFF0F172A),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          backgroundColor: Colors.blueAccent,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        onPressed: () {
+                          final consumptionText = consumptionController.text.replaceAll(',', '.');
+                          final consumption = double.tryParse(consumptionText);
+
+                          if (consumption == null || consumption <= 0) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Lütfen geçerli bir tüketim değeri girin!'), backgroundColor: Colors.redAccent),
+                            );
+                            return;
+                          }
+
+                          Navigator.pop(bottomSheetContext);
+
+                          final vehicleData = {
+                            "name": selectedFuelType == 'gasoline' ? "Özel Araç (Benzin)" : "Özel Araç (Motorin)",
+                            "type": selectedFuelType,
+                            "consumption": consumption,
+                          };
+
+                          cubit.calculateRoadtripCost(vehicleData, _localItinerary);
+
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Yakıt hesaplanıyor... ⛽'), backgroundColor: Colors.blueAccent),
+                          );
+                        },
+                        child: const Text('Maliyeti Hesapla', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                      ),
+                    ),
+
+                    if (cubit.isRoadtripMode) ...[
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        width: double.infinity,
+                        child: TextButton.icon(
+                          style: TextButton.styleFrom(
+                            foregroundColor: Colors.redAccent,
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                          ),
+                          icon: const Icon(Icons.cancel),
+                          label: const Text('Roadtrip Modunu Kapat'),
+                          onPressed: () {
+                            cubit.disableRoadtripMode();
+                            Navigator.pop(bottomSheetContext);
+                          },
+                        ),
+                      )
+                    ],
+                    const SizedBox(height: 16),
+                  ],
+                ),
+              );
+            }
+        );
+      },
+    );
+  }
+
   void _showAddCustomSpotModal(BuildContext context, int dayIndex) {
     LatLng initialMapCenter = const LatLng(36.8969, 30.7133);
 
@@ -162,14 +309,17 @@ class _ItineraryViewState extends State<ItineraryView> {
   }
 
   Widget _buildBudgetTracker() {
-    // YENİ: Cubit'teki Bütçe Kâhini verilerini anlık dinlemek için BlocBuilder ekledik
     return BlocBuilder<TripOptimizerCubit, TripOptimizerState>(
       builder: (context, state) {
         final cubit = context.read<TripOptimizerCubit>();
         final mlWarning = cubit.mlBudgetWarning;
         final mlPredictedCost = cubit.mlPredictedCost;
 
-        final spent = _totalSpent;
+        // YENİ: Cubit'teki ekstra masrafları (Yakıt vs.) topluyoruz
+        double extraCosts = cubit.extraExpenses.fold(0.0, (sum, item) => sum + (item['amount'] as num).toDouble());
+
+        // YENİ: Mekan ücretleri + Yakıt masrafı
+        final spent = _totalSpent + extraCosts;
         final remaining = widget.maxBudget - spent;
         final isOverBudget = spent > widget.maxBudget;
 
@@ -278,7 +428,48 @@ class _ItineraryViewState extends State<ItineraryView> {
               ),
 
               // ==========================================
-              // YENİ: MAKİNE ÖĞRENMESİ BÜTÇE UYARI KARTI
+              // YENİ: ROADTRIP YAKIT BİLGİ KARTI
+              // ==========================================
+              if (cubit.isRoadtripMode && cubit.selectedVehicle != null) ...[
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.blueAccent.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.blueAccent.withOpacity(0.3)),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                          cubit.selectedVehicle!['type'] == 'electric' ? Icons.electric_car : Icons.local_gas_station,
+                          color: Colors.blueAccent,
+                          size: 28
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '${cubit.selectedVehicle!['name']}',
+                              style: const TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold, fontSize: 13),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Tahmini Yakıt Masrafı: ${cubit.totalFuelCost.toStringAsFixed(0)} ₺',
+                              style: const TextStyle(color: Colors.white70, fontSize: 12),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+
+              // ==========================================
+              // MAKİNE ÖĞRENMESİ BÜTÇE UYARI KARTI
               // ==========================================
               if (mlWarning != null) ...[
                 const SizedBox(height: 16),
@@ -356,7 +547,20 @@ class _ItineraryViewState extends State<ItineraryView> {
         elevation: 0,
         foregroundColor: Colors.white,
         actions: [
-          // 1. En sık kullanılan Akıllı Bavul dışarıda sabit kalsın (Çok pratik olur)
+          BlocBuilder<TripOptimizerCubit, TripOptimizerState>(
+            builder: (context, state) {
+              final cubit = context.read<TripOptimizerCubit>();
+              return IconButton(
+                icon: Icon(
+                  cubit.isRoadtripMode ? Icons.directions_car : Icons.car_rental,
+                  color: cubit.isRoadtripMode ? Colors.greenAccent : Colors.white70,
+                  size: 26,
+                ),
+                tooltip: 'Araç Seçimi (Roadtrip Modu)',
+                onPressed: () => _showVehicleSelectionModal(context),
+              );
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.luggage_rounded, color: Colors.tealAccent, size: 24),
             tooltip: 'Akıllı Bavul Asistanı',
@@ -369,8 +573,6 @@ class _ItineraryViewState extends State<ItineraryView> {
               );
             },
           ),
-
-          // 2. Diğer kalabalık yapan araçları dikey üç nokta menüsüne gizliyoruz
           PopupMenuButton<String>(
             icon: const Icon(Icons.more_vert_rounded, color: Colors.white70),
             color: const Color(0xFF1E293B),
@@ -1008,11 +1210,10 @@ class _DayWeatherBadgeState extends State<DayWeatherBadge> {
               onPressed: () async {
                 Navigator.pop(context);
 
-                // Açık hava mekanlarını bul
                 final outdoorSpots = widget.dayPlan.places.where((spot) =>
-                  spot.category.toLowerCase() == 'nature' || 
-                  spot.category.toLowerCase() == 'history' ||
-                  spot.isOutdoor
+                spot.category.toLowerCase() == 'nature' ||
+                    spot.category.toLowerCase() == 'history' ||
+                    spot.isOutdoor
                 ).toList();
 
                 if (outdoorSpots.isEmpty) {
@@ -1027,7 +1228,6 @@ class _DayWeatherBadgeState extends State<DayWeatherBadge> {
                   return;
                 }
 
-                // Yükleniyor göster
                 if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
@@ -1042,7 +1242,6 @@ class _DayWeatherBadgeState extends State<DayWeatherBadge> {
                 bool anySuccess = false;
                 String? lastError;
 
-                // Her açık hava mekanı için alternatif iste
                 for (final spot in outdoorSpots) {
                   final errorMessage = await cubit.replaceSpotWithAIAlternatives(widget.dayPlan, spot);
                   if (errorMessage == null) {
@@ -1056,9 +1255,9 @@ class _DayWeatherBadgeState extends State<DayWeatherBadge> {
                   ScaffoldMessenger.of(context).hideCurrentSnackBar();
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
-                      content: Text(anySuccess 
-                        ? 'Kapalı mekan alternatifleri eklendi! 🪄' 
-                        : 'Hata: ${lastError ?? "Bilinmeyen hata"}'),
+                      content: Text(anySuccess
+                          ? 'Kapalı mekan alternatifleri eklendi! 🪄'
+                          : 'Hata: ${lastError ?? "Bilinmeyen hata"}'),
                       backgroundColor: anySuccess ? Colors.deepPurpleAccent : Colors.redAccent,
                       duration: const Duration(seconds: 5),
                     ),

@@ -10,22 +10,31 @@ import '../../domain/usecases/get_city_spots_usecase.dart';
 import '../../domain/usecases/optimize_route_usecase.dart';
 import 'trip_optimizer_state.dart';
 import 'package:travel_route_optimizer/core/services/ai_route_service.dart';
-// spot_model.dart büyük ihtimalle data/models altındadır:
+import 'package:travel_route_optimizer/core/services/fuel_price_service.dart'; // YENİ: Yakıt Servisi
 import '../../data/models/spot_model.dart';
+
 class TripOptimizerCubit extends Cubit<TripOptimizerState> {
   final GetCitySpotsUseCase getCitySpotsUseCase;
   final OptimizeRouteUseCase optimizeRouteUseCase;
   final TripRepository repository;
 
-  // YENİ: AI Servisimizi başlatıyoruz
   final AIRouteService aiRouteService = AIRouteService();
 
   double currentTotalBudget = 0.0;
   List<Map<String, dynamic>> extraExpenses = [];
   String currentCity = "Bilinmeyen Şehir";
 
-  String? mlBudgetWarning; // Makine öğrenmesi uyarısı
+  String? mlBudgetWarning;
   double? mlPredictedCost;
+
+  // ==========================================
+  // YENİ: YAKIT VE ROADTRIP DEĞİŞKENLERİ
+  // ==========================================
+  final FuelPriceService fuelPriceService = FuelPriceService();
+  bool isRoadtripMode = false;
+  Map<String, dynamic>? selectedVehicle;
+  Map<String, double>? currentFuelPrices;
+  double totalFuelCost = 0.0;
 
   TripOptimizerCubit({
     required this.getCitySpotsUseCase,
@@ -236,15 +245,10 @@ class TripOptimizerCubit extends Cubit<TripOptimizerState> {
     }
   }
 
-  // ==========================================
-  // YENİ: TEKİL MEKAN İÇİN AI ALTERNATİF MOTORU
-  // ==========================================
-  /// Null dönerse başarılı, String dönerse hata mesajı içerir.
   Future<String?> replaceSpotWithAIAlternatives(ItineraryDayEntity dayPlan, SpotEntity oldSpot) async {
     try {
       debugPrint("🔄 [AI] Alternatif mekan üretme başlıyor... Şehir: $currentCity, Mekan: ${oldSpot.name}");
 
-      // 1. Gemini servisini çağır
       final newSpotsData = await aiRouteService.getAlternatives(
         city: currentCity,
         placeToReplace: oldSpot.name,
@@ -253,7 +257,6 @@ class TripOptimizerCubit extends Cubit<TripOptimizerState> {
       debugPrint("🔄 [AI] Gemini'den ${newSpotsData.length} adet alternatif döndü.");
 
       if (newSpotsData.isNotEmpty) {
-        // 2. Dönen JSON objelerini SpotModel'e çevir
         List<SpotEntity> newSpots = newSpotsData.map((json) {
           debugPrint("🔄 [AI] JSON parse ediliyor: $json");
           return SpotModel.fromJson(json);
@@ -261,25 +264,21 @@ class TripOptimizerCubit extends Cubit<TripOptimizerState> {
 
         debugPrint("🔄 [AI] ${newSpots.length} adet SpotModel oluşturuldu.");
 
-        // 3. Eski mekanı listeden bul (isim bazlı arama — Equatable uyumsuzluğunu önler)
         final spotIndex = dayPlan.places.indexWhere((s) => s.name == oldSpot.name);
         debugPrint("🔄 [AI] Eski mekan index: $spotIndex");
 
         if (spotIndex != -1) {
-          // Listeyi mutable hale getir (const constructor'dan gelmiş olabilir)
           final mutablePlaces = List<SpotEntity>.from(dayPlan.places);
           mutablePlaces.removeAt(spotIndex);
           mutablePlaces.insertAll(spotIndex, newSpots);
 
-          // places listesini güncelle
           dayPlan.places.clear();
           dayPlan.places.addAll(mutablePlaces);
 
           debugPrint("✅ [AI] Mekan başarıyla değiştirildi! Yeni liste: ${dayPlan.places.map((s) => s.name).toList()}");
 
-          // State'i tazeleyerek tüm UI'ın haberdar olmasını sağla
           emit(BudgetUpdatedState());
-          return null; // Başarılı
+          return null;
         } else {
           debugPrint("❌ [AI] Eski mekan '${oldSpot.name}' listede bulunamadı!");
           return "Eski mekan '${oldSpot.name}' listede bulunamadı.";
@@ -299,7 +298,6 @@ class TripOptimizerCubit extends Cubit<TripOptimizerState> {
     try {
       debugPrint("🔮 [ML] Bütçe Kâhini çalışıyor...");
 
-      // Tüm rotadaki mekan kategorilerini tek bir listede topluyoruz
       List<String> allCategories = [];
       for (var day in itinerary) {
         for (var spot in day.places) {
@@ -307,7 +305,6 @@ class TripOptimizerCubit extends Cubit<TripOptimizerState> {
         }
       }
 
-      // FastAPI'deki modele (RandomForest) istek atıyoruz
       final result = await repository.predictBudget(
         city: currentCity,
         places: allCategories,
@@ -316,7 +313,6 @@ class TripOptimizerCubit extends Cubit<TripOptimizerState> {
 
       debugPrint("🔮 [ML] Sonuç: $result");
 
-      // Eğer bütçe aşımı varsa uyarıyı state'e kaydediyoruz
       if (result['budget_status'] == 'warning') {
         mlBudgetWarning = result['message'];
       } else {
@@ -325,11 +321,62 @@ class TripOptimizerCubit extends Cubit<TripOptimizerState> {
 
       mlPredictedCost = (result['predicted_cost'] as num).toDouble();
 
-      // Arayüzü (itinerary_view) tetikleyip uyarıyı ekranda gösteriyoruz
       emit(BudgetUpdatedState());
 
     } catch (e) {
       debugPrint("❌ [ML] Bütçe Kâhini Hatası: $e");
     }
+  }
+
+  // ==========================================
+  // YENİ: ROADTRIP VE YAKIT HESAPLAMA MOTORU
+  // ==========================================
+  Future<void> calculateRoadtripCost(Map<String, dynamic> vehicle, List<ItineraryDayEntity> itinerary) async {
+    emit(TripOptimizerLoading());
+    try {
+      isRoadtripMode = true;
+      selectedVehicle = vehicle;
+
+      if (currentFuelPrices == null) {
+        debugPrint("⛽ Yakıt fiyatları CollectAPI'den çekiliyor... Şehir: $currentCity");
+        currentFuelPrices = await fuelPriceService.getCurrentFuelPrices(currentCity);
+      }
+
+      double totalKm = 0.0;
+      for (var day in itinerary) {
+        totalKm += day.estimatedWalkingKm;
+      }
+
+      double realDrivingKm = (totalKm * 1.5) + 10.0;
+
+      double consumption = (vehicle['consumption'] as num).toDouble();
+      String fuelType = vehicle['type'];
+
+      double pricePerUnit = currentFuelPrices![fuelType] ?? currentFuelPrices!['gasoline']!;
+
+      totalFuelCost = (realDrivingKm / 100) * consumption * pricePerUnit;
+
+      extraExpenses.removeWhere((expense) => expense['title'].toString().startsWith("🚗 Araç Yakıtı"));
+      addExtraExpense("🚗 Araç Yakıtı (${vehicle['name']})", totalFuelCost);
+
+      debugPrint("🚙 Roadtrip Hesaplandı: $realDrivingKm km, Tutar: $totalFuelCost TL");
+
+      emit(RoadtripModeActivated(totalFuelCost, vehicle['name']));
+      emit(BudgetUpdatedState());
+
+    } catch (e) {
+      debugPrint("❌ Yakıt hesaplanırken hata oluştu: $e");
+      emit(TripOptimizerError("Yakıt hesaplanırken hata: $e"));
+    }
+  }
+
+  void disableRoadtripMode() {
+    isRoadtripMode = false;
+    selectedVehicle = null;
+    totalFuelCost = 0.0;
+
+    extraExpenses.removeWhere((expense) => expense['title'].toString().startsWith("🚗 Araç Yakıtı"));
+
+    emit(BudgetUpdatedState());
   }
 }

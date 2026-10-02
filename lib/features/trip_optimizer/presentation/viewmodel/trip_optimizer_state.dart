@@ -70,7 +70,6 @@ class TravelerStatsLoaded extends TripOptimizerState {
   TravelerStatsLoaded(this.itineraries);
 }
 
-// YENİ: Yapay Zeka analizini bitirdiğinde arayüzü tetikleyecek state
 class AIPromptAnalyzed extends TripOptimizerState {
   final Map<String, dynamic> aiParams;
 
@@ -78,4 +77,17 @@ class AIPromptAnalyzed extends TripOptimizerState {
 
   @override
   List<Object?> get props => [aiParams];
+}
+
+// ==========================================
+// YENİ: ROADTRIP (ARAÇ) MODU STATE'İ
+// ==========================================
+class RoadtripModeActivated extends TripOptimizerState {
+  final double totalFuelCost;
+  final String vehicleName;
+
+  const RoadtripModeActivated(this.totalFuelCost, this.vehicleName);
+
+  @override
+  List<Object?> get props => [totalFuelCost, vehicleName];
 }
