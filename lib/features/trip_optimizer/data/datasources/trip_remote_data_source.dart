@@ -1,6 +1,8 @@
 import 'package:dio/dio.dart';
+import 'package:supabase_flutter/supabase_flutter.dart'; // YENİ: Supabase eklendi
 import '../models/itinerary_day_model.dart';
 import '../models/spot_model.dart';
+
 
 abstract class TripRemoteDataSource {
   Future<List<SpotModel>> getCitySpots(String city);
@@ -15,7 +17,9 @@ abstract class TripRemoteDataSource {
     required List<Map<String, dynamic>> places,
   });
 
-  Future<void> saveItineraryToCloud({
+  // BURASI DÜZELTİLDİ: Sadece imza var, gövde ({...}) yok!
+  Future<String?> saveItineraryToCloud({
+    String? itineraryId, // YENİ: ID varsa güncelleme yapar
     required String userId,
     required String city,
     required double maxBudget,
@@ -37,18 +41,21 @@ abstract class TripRemoteDataSource {
 
   Future<Map<String, dynamic>> analyzePromptWithAI(String prompt);
 
-  // YENİ: Makine Öğrenmesi (Bütçe Kâhini) için API imzamız
   Future<Map<String, dynamic>> predictBudget({
     required String city,
     required List<String> places,
     required double userBudget,
   });
+
+  Stream<List<Map<String, dynamic>>> listenToItineraryChanges(String itineraryId);
 }
 
 class TripRemoteDataSourceImpl implements TripRemoteDataSource {
   final Dio dio;
   final String baseUrl = 'https://travel-optimizer-api.onrender.com';
-  //final String baseUrl = 'http://10.0.2.2:8000';
+
+  // YENİ: Supabase istemcisi
+  final SupabaseClient supabase = Supabase.instance.client;
 
   TripRemoteDataSourceImpl({required this.dio});
 
@@ -107,13 +114,24 @@ class TripRemoteDataSourceImpl implements TripRemoteDataSource {
   }
 
   @override
-  Future<void> saveItineraryToCloud({
+  Future<String?> saveItineraryToCloud({
+    String? itineraryId, // YENİ PARAMETRE
     required String userId,
     required String city,
     required double maxBudget,
     required List<Map<String, dynamic>> itinerary,
   }) async {
     try {
+      // YENİ: EĞER ZATEN BİR CANLI YAYIN ID'Sİ VARSA, YENİ SATIR AÇMA, SUPABASE'İ DİREKT GÜNCELLE!
+      if (itineraryId != null) {
+        await supabase.from('itineraries').update({
+          'route_json': itinerary,
+          'total_budget': maxBudget,
+        }).eq('id', itineraryId);
+        return itineraryId; // Aynı ID'yi geri dön
+      }
+
+      // EĞER ID YOKSA (İLK DEFA KAYDEDİLİYORSA) YENİ SATIR OLUŞTUR
       final response = await dio.post(
         '$baseUrl/save-itinerary',
         data: {
@@ -124,7 +142,10 @@ class TripRemoteDataSourceImpl implements TripRemoteDataSource {
         },
       );
 
-      if (response.statusCode != 200) {
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final cloudId = response.data['id']?.toString() ?? response.data['itinerary_id']?.toString();
+        return cloudId;
+      } else {
         throw Exception('API Hatası: ${response.data}');
       }
     } catch (e) {
@@ -219,9 +240,6 @@ class TripRemoteDataSourceImpl implements TripRemoteDataSource {
     }
   }
 
-  // ==========================================
-  // YENİ: MAKİNE ÖĞRENMESİ (BÜTÇE KÂHİNİ) İSTEĞİ
-  // ==========================================
   @override
   Future<Map<String, dynamic>> predictBudget({
     required String city,
@@ -252,5 +270,22 @@ class TripRemoteDataSourceImpl implements TripRemoteDataSource {
     } catch (e) {
       throw Exception('Bilinmeyen Kâhin Hatası: $e');
     }
+  }
+
+  // ==========================================
+  // YENİ: SUPABASE REAL-TIME (CANLI) DİNLEME
+  // ==========================================
+  @override
+  Stream<List<Map<String, dynamic>>> listenToItineraryChanges(String itineraryId) {
+    return supabase
+        .from('itineraries')
+        .stream(primaryKey: ['id'])
+        .eq('id', itineraryId)
+        .map((data) {
+      if (data.isEmpty) return [];
+      // DÜZELTME: Sütun adı resimdeki gibi 'route_json' yapıldı!
+      final itineraryList = data.first['route_json'] as List<dynamic>? ?? [];
+      return itineraryList.map((e) => e as Map<String, dynamic>).toList();
+    });
   }
 }

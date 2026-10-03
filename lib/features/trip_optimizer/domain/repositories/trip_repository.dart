@@ -20,7 +20,8 @@ abstract class TripRepository {
   Future<List<List<ItineraryDayEntity>>> getSavedItineraries();
 
   // YENİ: Bulut (Supabase) kayıt işlemi
-  Future<void> saveItineraryToCloud({
+  Future<String?> saveItineraryToCloud({
+    String? itineraryId, // YENİ
     required String userId,
     required String city,
     required double maxBudget,
@@ -47,4 +48,7 @@ abstract class TripRepository {
     required List<String> places,
     required double userBudget,
   });
+
+  // YENİ: Supabase Real-time Stream Fonksiyonu
+  Stream<List<Map<String, dynamic>>> listenToItineraryChanges(String itineraryId);
 }

@@ -321,6 +321,7 @@ class _ItineraryViewState extends State<ItineraryView> {
         // YENİ: Mekan ücretleri + Yakıt masrafı
         final spent = _totalSpent + extraCosts;
         final remaining = widget.maxBudget - spent;
+
         final isOverBudget = spent > widget.maxBudget;
 
         double progress = 0.0;
@@ -539,7 +540,7 @@ class _ItineraryViewState extends State<ItineraryView> {
       backgroundColor: const Color(0xFF0F172A),
       appBar: AppBar(
         title: const Text(
-          'Seyahat Rotam 🗺️',
+          'Seyahat Rotam 🗺',
           style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18, letterSpacing: 0.5),
         ),
         centerTitle: true,
@@ -547,6 +548,122 @@ class _ItineraryViewState extends State<ItineraryView> {
         elevation: 0,
         foregroundColor: Colors.white,
         actions: [
+          // YENİ: Canlı Ortak Düzenleme (Real-time) Butonu
+          BlocBuilder<TripOptimizerCubit, TripOptimizerState>(
+            builder: (context, state) {
+              final cubit = context.read<TripOptimizerCubit>();
+              final isLive = cubit.currentCloudItineraryId != null;
+
+              return IconButton(
+                icon: Icon(
+                  isLive ? Icons.wifi_tethering : Icons.wifi_tethering_off,
+                  color: isLive ? Colors.greenAccent : Colors.white54,
+                  size: 26,
+                ),
+                tooltip: isLive ? 'Canlı Bağlantıyı Kapat' : 'Canlı Ortak Planlama',
+                onPressed: () {
+                  showDialog(
+                    context: context,
+                    builder: (dialogContext) {
+                      final codeController = TextEditingController();
+                      return AlertDialog(
+                        backgroundColor: const Color(0xFF1E293B),
+                        title: Text(
+                            isLive ? 'Canlı Bağlantı Aktif 🟢' : 'Ortak Planlama 🤝',
+                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)
+                        ),
+                        content: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            // EĞER ZATEN BİR ODAYA BAĞLIYSAK KODU GÖSTER
+                            if (isLive) ...[
+                              const Text(
+                                'Arkadaşının bu rotaya katılması için aşağıdaki "Oda Kodunu" kopyalayıp ona gönder:',
+                                style: TextStyle(color: Colors.white70, fontSize: 13),
+                                textAlign: TextAlign.center,
+                              ),
+                              const SizedBox(height: 12),
+                              Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                    color: Colors.black45,
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(color: Colors.greenAccent.withOpacity(0.5))
+                                ),
+                                child: SelectableText(
+                                  cubit.currentCloudItineraryId!,
+                                  style: const TextStyle(color: Colors.greenAccent, fontWeight: FontWeight.bold, fontSize: 12),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ),
+                              const SizedBox(height: 24),
+                              ElevatedButton.icon(
+                                style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent, foregroundColor: Colors.white),
+                                icon: const Icon(Icons.wifi_off),
+                                label: const Text('Bağlantıyı Kes'),
+                                onPressed: () {
+                                  cubit.stopListeningToCloud();
+                                  Navigator.pop(dialogContext);
+                                  cubit.emit(BudgetUpdatedState()); // Arayüzü yenile
+                                },
+                              )
+                            ]
+                            // EĞER HİÇBİR ODAYA BAĞLI DEĞİLSEK YENİ ODA KUR VEYA KATIL
+                            else ...[
+                              ElevatedButton.icon(
+                                style: ElevatedButton.styleFrom(minimumSize: const Size.fromHeight(45)),
+                                icon: const Icon(Icons.add),
+                                label: const Text('Yeni Canlı Rota Başlat'),
+                                onPressed: () {
+                                  Navigator.pop(dialogContext);
+                                  cubit.saveItinerary(_localItinerary);
+                                },
+                              ),
+                              const Padding(
+                                padding: EdgeInsets.symmetric(vertical: 16),
+                                child: Text('VEYA', style: TextStyle(color: Colors.white54, fontWeight: FontWeight.bold)),
+                              ),
+                              TextField(
+                                controller: codeController,
+                                style: const TextStyle(color: Colors.white),
+                                decoration: const InputDecoration(
+                                  hintText: 'Arkadaşının Rota Kodunu Gir',
+                                  hintStyle: TextStyle(color: Colors.white38, fontSize: 13),
+                                  filled: true,
+                                  fillColor: Color(0xFF0F172A),
+                                  border: OutlineInputBorder(borderSide: BorderSide.none),
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              ElevatedButton(
+                                style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.greenAccent,
+                                    foregroundColor: Colors.black,
+                                    minimumSize: const Size.fromHeight(45)
+                                ),
+                                onPressed: () {
+                                  if (codeController.text.isNotEmpty) {
+                                    Navigator.pop(dialogContext);
+                                    // YENİ: Kodu alıp o frekansı dinlemeye başlıyoruz!
+                                    cubit.listenToCloudItinerary(codeController.text.trim());
+                                    cubit.emit(BudgetUpdatedState());
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(content: Text('Arkadaşının rotasına bağlanıldı! 🟢'), backgroundColor: Colors.green),
+                                    );
+                                  }
+                                },
+                                child: const Text('Rotaya Katıl', style: TextStyle(fontWeight: FontWeight.bold)),
+                              )
+                            ]
+                          ],
+                        ),
+                      );
+                    },
+                  );
+                },
+              );
+            },
+            ),
           BlocBuilder<TripOptimizerCubit, TripOptimizerState>(
             builder: (context, state) {
               final cubit = context.read<TripOptimizerCubit>();
@@ -671,18 +788,44 @@ class _ItineraryViewState extends State<ItineraryView> {
           Expanded(
             child: BlocListener<TripOptimizerCubit, TripOptimizerState>(
               listener: (context, state) {
+                // 1. DOKUNUŞ: Kuyruğa girmiş eski bildirimleri anında temizle (Spam'i engeller)
+                ScaffoldMessenger.of(context).clearSnackBars();
+
                 if (state is ItinerarySaved) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
                       content: Text('Rota Başarıyla Kaydedildi! 💾'),
                       backgroundColor: Colors.green,
                       behavior: SnackBarBehavior.floating,
+                      duration: Duration(seconds: 3), // 2. DOKUNUŞ: Tam 3 saniye ekranda kalır
                     ),
                   );
                 } else if (state is TripOptimizerError) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text(state.message), backgroundColor: Colors.red),
+                    SnackBar(
+                      content: Text(state.message),
+                      backgroundColor: Colors.red,
+                      behavior: SnackBarBehavior.floating,
+                      duration: const Duration(seconds: 3),
+                    ),
                   );
+                }
+                // Buluttan Canlı Veri (Real-time) geldiğinde ekranı güncelle
+                else if (state is RouteOptimized) {
+                  final cubit = context.read<TripOptimizerCubit>();
+                  if (cubit.currentCloudItineraryId != null) {
+                    setState(() {
+                      _localItinerary = List<ItineraryDayEntity>.from(state.itinerary);
+                    });
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Rota güncellendi! 🔄'),
+                        backgroundColor: Colors.blueAccent,
+                        duration: Duration(seconds: 3), // 2. DOKUNUŞ: Tam 3 saniye ekranda kalır
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
+                  }
                 }
               },
               child: ListView.builder(

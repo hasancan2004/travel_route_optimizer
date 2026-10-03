@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:dio/dio.dart';
@@ -35,6 +37,9 @@ class TripOptimizerCubit extends Cubit<TripOptimizerState> {
   Map<String, dynamic>? selectedVehicle;
   Map<String, double>? currentFuelPrices;
   double totalFuelCost = 0.0;
+
+  StreamSubscription? _itinerarySubscription;
+  String? currentCloudItineraryId; // O an dinlenen rotanın ID'si
 
   TripOptimizerCubit({
     required this.getCitySpotsUseCase,
@@ -105,6 +110,7 @@ class TripOptimizerCubit extends Cubit<TripOptimizerState> {
     emit(BudgetUpdatedState());
   }
 
+
   Future<void> saveItinerary(List<ItineraryDayEntity> itinerary) async {
     try {
       await repository.saveItinerary(itinerary);
@@ -112,13 +118,20 @@ class TripOptimizerCubit extends Cubit<TripOptimizerState> {
 
       if (currentUserId != null) {
         try {
-          await repository.saveItineraryToCloud(
+          final cloudItineraryId = await repository.saveItineraryToCloud(
+            itineraryId: currentCloudItineraryId, // CAN ALICI DOKUNUŞ BURASI!
             userId: currentUserId,
             city: currentCity,
             maxBudget: currentTotalBudget,
             itinerary: itinerary,
           );
-          debugPrint("Buluta kayıt işlemi başarılı! ☁️✅");
+
+          debugPrint("Buluta kayıt/güncelleme başarılı! ☁️✅ ID: $cloudItineraryId");
+
+          if (cloudItineraryId != null) {
+            listenToCloudItinerary(cloudItineraryId);
+          }
+
         } catch (cloudError) {
           debugPrint("Buluta kayıt hatası (Lokalde güvende): $cloudError");
         }
@@ -130,6 +143,7 @@ class TripOptimizerCubit extends Cubit<TripOptimizerState> {
       emit(TripOptimizerError("Rota kaydedilirken hata oluştu: ${e.toString()}"));
     }
   }
+
 
   Future<void> autoSaveItinerary(List<ItineraryDayEntity> itinerary) async {
     try {
@@ -379,4 +393,65 @@ class TripOptimizerCubit extends Cubit<TripOptimizerState> {
 
     emit(BudgetUpdatedState());
   }
+
+  void listenToCloudItinerary(String itineraryId) {
+    // Eğer halihazırda başka bir rotayı dinliyorsak önce onu iptal et
+    _itinerarySubscription?.cancel();
+    currentCloudItineraryId = itineraryId;
+
+    debugPrint("📡 Supabase Real-time dinlemesi başlatılıyor... Rota ID: $itineraryId");
+
+    try {
+      _itinerarySubscription = repository.listenToItineraryChanges(itineraryId).listen((cloudData) {
+        if (cloudData.isNotEmpty) {
+          debugPrint("⚡ [REAL-TIME] Buluttan yeni veri geldi!");
+
+          // Buluttan gelen JSON'ı Entity'ye çeviriyoruz
+          final List<ItineraryDayEntity> updatedItinerary = cloudData.map((dayJson) {
+            final List placesList = dayJson['places'] ?? [];
+            return ItineraryDayEntity(
+              day: dayJson['day'],
+              estimatedWalkingKm: (dayJson['estimated_walking_km'] as num).toDouble(),
+              places: placesList.map((spotJson) => SpotModel(
+                name: spotJson['name'],
+                category: spotJson['category'],
+                rating: (spotJson['rating'] as num).toDouble(),
+                entryFee: (spotJson['entry_fee'] as num).toDouble(),
+                lat: (spotJson['lat'] as num).toDouble(),
+                lng: (spotJson['lng'] as num).toDouble(),
+                isOutdoor: spotJson['is_outdoor'] ?? false,
+              )).toList(),
+            );
+          }).toList();
+
+          // Arayüzü tetiklemek için State güncelliyoruz
+          emit(RouteOptimized(updatedItinerary));
+
+          // Eğer araç modu açıksa mesafeler değiştiği için maliyeti yeniden hesapla
+          if (isRoadtripMode && selectedVehicle != null) {
+            calculateRoadtripCost(selectedVehicle!, updatedItinerary);
+          }
+        }
+      });
+    } catch (e) {
+      debugPrint("❌ Real-time dinleme hatası: $e");
+    }
+  }
+
+  /// Haritadan çıkıldığında veya başka rotaya geçildiğinde Stream'i kapat
+  void stopListeningToCloud() {
+    _itinerarySubscription?.cancel();
+    _itinerarySubscription = null;
+    currentCloudItineraryId = null;
+    debugPrint("🔇 Supabase Real-time dinlemesi durduruldu.");
+  }
+
+  // Kübit kapandığında Stream'in açık kalıp hafıza sızdırmasını (memory leak) önle
+  @override
+  Future<void> close() {
+    _itinerarySubscription?.cancel();
+    return super.close();
+  }
+
+
 }

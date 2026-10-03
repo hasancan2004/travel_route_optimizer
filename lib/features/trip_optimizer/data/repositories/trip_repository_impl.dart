@@ -158,7 +158,8 @@ class TripRepositoryImpl implements TripRepository {
 
   // Buluta kaydetme
   @override
-  Future<void> saveItineraryToCloud({
+  Future<String?> saveItineraryToCloud({
+    String? itineraryId, // YENİ
     required String userId,
     required String city,
     required double maxBudget,
@@ -178,7 +179,8 @@ class TripRepositoryImpl implements TripRepository {
       }).toList(),
     }).toList();
 
-    await remoteDataSource.saveItineraryToCloud(
+    return await remoteDataSource.saveItineraryToCloud(
+      itineraryId: itineraryId, // ID'Yİ ALT KATMANA İLET
       userId: userId,
       city: city,
       maxBudget: maxBudget,
@@ -241,5 +243,13 @@ class TripRepositoryImpl implements TripRepository {
       places: places,
       userBudget: userBudget,
     );
+  }
+
+  // ==========================================
+  // YENİ: SUPABASE REAL-TIME DİNLEME
+  // ==========================================
+  @override
+  Stream<List<Map<String, dynamic>>> listenToItineraryChanges(String itineraryId) {
+    return remoteDataSource.listenToItineraryChanges(itineraryId);
   }
 }
